@@ -61,6 +61,89 @@ export async function addExpense(formData: FormData) {
   return { success: true }
 }
 
+export async function addBatchExpenses(tripId: string, expenses: { categoryId: string, amount: number }[]) {
+  const supabase = await createClient()
+  
+  if (!tripId || !expenses || expenses.length === 0) {
+    return { success: false, error: 'Trip and at least one expense are required' }
+  }
+
+  // 1. Get current user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  // 2. Insert the expenses
+  const expensesToInsert = expenses.map(exp => ({
+    amount: exp.amount,
+    category_id: exp.categoryId,
+    trip_id: tripId,
+    user_id: user.id,
+    date: new Date().toISOString().split('T')[0] // Today
+  }))
+
+  const { error: insertError } = await supabase
+    .from('expenses')
+    .insert(expensesToInsert)
+
+  if (insertError) {
+    console.error('Insert error:', insertError)
+    return { success: false, error: insertError.message }
+  }
+
+  revalidatePath('/expenses')
+  revalidatePath('/dashboard')
+  
+  return { success: true }
+}
+
+export async function deactivateCategory(categoryId: string) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  // Set is_active to false to hide it from the grid.
+  // We remove the user_id check to allow hiding default categories too.
+  const { error } = await supabase
+    .from('categories')
+    .update({ is_active: false })
+    .eq('id', categoryId)
+
+  if (error) {
+    console.error('Category deactivation error:', error)
+    return { success: false, error: 'Failed to deactivate category' }
+  }
+
+  revalidatePath('/expenses')
+  return { success: true }
+}
+
+export async function reactivateCategory(categoryId: string) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const { error } = await supabase
+    .from('categories')
+    .update({ is_active: true })
+    .eq('id', categoryId)
+
+  if (error) {
+    console.error('Category reactivation error:', error)
+    return { success: false, error: 'Failed to reactivate category' }
+  }
+
+  revalidatePath('/expenses')
+  return { success: true }
+}
+
 export async function createCategory(name: string) {
   const supabase = await createClient()
   
@@ -74,12 +157,16 @@ export async function createCategory(name: string) {
   // 1. Check if category already exists (case-insensitive)
   const { data: existing } = await supabase
     .from('categories')
-    .select('id')
+    .select('id, is_active')
     .ilike('name', cleanName)
     .or(`is_default.eq.true,user_id.eq.${user.id}`)
     .maybeSingle()
 
   if (existing) {
+    if (!existing.is_active) {
+      // Reactivate if it was hidden
+      return await reactivateCategory(existing.id)
+    }
     return { success: false, error: 'A category with this name already exists.' }
   }
 
@@ -89,6 +176,7 @@ export async function createCategory(name: string) {
     .insert({
       name: cleanName,
       is_default: false,
+      is_active: true,
       user_id: user.id
     })
 

@@ -52,16 +52,16 @@ export default async function TripsPage() {
                     <div className="flex">
                       <div className={cn(
                         "w-2",
-                        trip.status === 'running' ? "bg-green-500" : "bg-zinc-300"
+                        trip.status === 'completed' ? "bg-green-500" : "bg-amber-400"
                       )} />
                       <div className="flex-1 p-5 space-y-3">
                         <div className="flex items-center justify-between">
                           <h3 className="font-bold text-lg">{trip.commodity || 'General Load'}</h3>
                           <span className={cn(
                             "text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded-md",
-                            trip.status === 'running' 
+                            trip.status === 'completed' 
                               ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" 
-                              : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                              : "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
                           )}>
                             {trip.status}
                           </span>

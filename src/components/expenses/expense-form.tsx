@@ -12,8 +12,7 @@ import {
   SelectValue 
 } from '@/components/ui/select'
 import { CategoryGrid } from './category-grid'
-import { AmountInput } from './amount-input'
-import { addExpense } from '../../app/expenses/actions'
+import { addBatchExpenses } from '../../app/expenses/actions'
 
 import { cn } from '@/lib/utils'
 
@@ -35,36 +34,41 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
 
   const activeTrip = trips.find(t => t.status === 'running')
   
-  const [amount, setAmount] = useState('')
-  const [category, setCategory] = useState<string | null>(null)
+  const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [tripId, setTripId] = useState<string>(activeTrip?.id || trips[0]?.id || '')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
+  const handleAmountChange = (categoryId: string, amount: string) => {
+    setAmounts(prev => ({
+      ...prev,
+      [categoryId]: amount
+    }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log('Form submitting...', { amount, category, tripId })
-    if (!amount || !category || !tripId) {
-      console.warn('Missing required fields:', { amount, category, tripId })
+    
+    const validExpenses = Object.entries(amounts)
+      .filter(([_, amt]) => amt && parseFloat(amt) > 0)
+      .map(([catId, amt]) => ({
+        categoryId: catId,
+        amount: parseFloat(amt)
+      }))
+
+    if (validExpenses.length === 0 || !tripId) {
       return
     }
 
-
     setLoading(true)
     try {
-      const formData = new FormData()
-      formData.append('amount', amount)
-      formData.append('categoryName', category)
-      formData.append('tripId', tripId)
-      
-      const result = await addExpense(formData)
+      const result = await addBatchExpenses(tripId, validExpenses)
       
       if (result.success) {
-        setAmount('')
-        setCategory(null)
+        setAmounts({})
         router.refresh()
       } else {
-        alert(result.error || 'Failed to add expense')
+        alert(result.error || 'Failed to add expenses')
       }
     } catch (error) {
       console.error('Error:', error)
@@ -75,6 +79,7 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
   }
 
   const selectedTrip = trips.find(t => t.id === tripId)
+  const totalAmount = Object.values(amounts).reduce((acc, curr) => acc + (parseFloat(curr) || 0), 0)
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col">
@@ -128,22 +133,15 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
 
       <div className="h-px bg-zinc-100 dark:bg-zinc-800 mx-6 my-2" />
 
-      {/* Amount and Numpad Section */}
-      <div className="px-6 py-4">
-        <AmountInput value={amount} onChange={setAmount} />
-      </div>
-
-      <div className="h-px bg-zinc-100 dark:bg-zinc-800 mx-6 my-2" />
-
       {/* Category Section */}
       <div className="px-6 py-4 space-y-4">
         <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400">
-          Select Category
+          Enter Expenses
         </label>
         <CategoryGrid 
           categories={categories} 
-          selectedCategory={category} 
-          onSelect={setCategory} 
+          amounts={amounts}
+          onAmountChange={handleAmountChange}
         />
       </div>
 
@@ -154,9 +152,9 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
           type="submit"
           size="lg" 
           className="w-full h-16 text-lg font-bold bg-[#1a365d] hover:bg-[#1a365d]/90 text-white rounded-2xl shadow-xl transition-all active:scale-[0.98]"
-          disabled={!amount || !category || !tripId || loading}
+          disabled={totalAmount === 0 || !tripId || loading}
         >
-          {loading ? 'Adding...' : 'Add expense'}
+          {loading ? 'Adding...' : `Add ${totalAmount > 0 ? `₹${totalAmount}` : 'Expenses'}`}
         </Button>
 
       </div>

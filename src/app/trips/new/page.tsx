@@ -12,6 +12,7 @@ import { createClient } from '@/utils/supabase/client'
 export default function NewTripPage() {
   const [commodity, setCommodity] = useState('')
   const [route, setRoute] = useState('')
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
@@ -29,7 +30,7 @@ export default function NewTripPage() {
         route,
         user_id: user.id,
         status: 'running',
-        start_date: new Date().toISOString().split('T')[0]
+        start_date: startDate
       })
 
       if (error) throw error
@@ -94,14 +95,19 @@ export default function NewTripPage() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                <Label htmlFor="startDate" className="text-xs font-bold uppercase tracking-wider text-zinc-400">
                   Start Date
                 </Label>
                 <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
-                  <div className="pl-10 h-14 bg-zinc-50 dark:bg-zinc-900 rounded-xl flex items-center text-zinc-500">
-                    {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                  </div>
+                  <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400 pointer-events-none" />
+                  <Input 
+                    id="startDate"
+                    type="date"
+                    className="pl-10 h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-xl"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    required
+                  />
                 </div>
               </div>
 

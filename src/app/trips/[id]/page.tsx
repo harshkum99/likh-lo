@@ -6,6 +6,7 @@ import { Truck, MapPin, Calendar, Wallet, Receipt, ChevronLeft } from 'lucide-re
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { closeTrip } from '../actions'
+import { TripActions } from '@/components/trips/trip-actions'
 
 
 
@@ -137,6 +138,8 @@ export default async function TripDetailPage({ params }: { params: { id: string 
               </Button>
             </form>
           )}
+
+          <TripActions tripId={id} />
         </div>
       </div>
     </div>

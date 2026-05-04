@@ -26,8 +26,14 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
     .maybeSingle()
 
+  const { count: totalTrips } = await supabase
+    .from('trips')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', user.id)
+
 
   const stats = [
+    { label: 'Total Trips', value: totalTrips || 0, icon: Truck, color: 'text-orange-600', bg: 'bg-orange-100' },
     { label: 'Revenue', value: `₹${reportData?.total_revenue || 0}`, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-100' },
     { label: 'Expense', value: `₹${reportData?.total_expense || 0}`, icon: TrendingDown, color: 'text-red-600', bg: 'bg-red-100' },
     { label: 'Profit', value: `₹${reportData?.profit || 0}`, icon: Wallet, color: 'text-blue-600', bg: 'bg-blue-100' },
@@ -94,7 +100,7 @@ export default async function DashboardPage() {
         )}
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           {stats.map((stat) => {
             const Icon = stat.icon
             return (
