@@ -82,7 +82,8 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
         <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400">
           Selected Trip
         </label>
-        <Select value={tripId} onValueChange={setTripId}>
+        <Select value={tripId} onValueChange={(val) => val && setTripId(val)}>
+
           <SelectTrigger className="w-full h-14 px-4 rounded-2xl border-zinc-100 bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-800 shadow-sm">
             <SelectValue placeholder="Select a trip">
               {selectedTrip && (
