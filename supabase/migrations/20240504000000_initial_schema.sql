@@ -80,12 +80,30 @@ JOIN categories c ON e.category_id = c.id
 GROUP BY e.user_id, c.name;
 
 CREATE VIEW monthly_report AS
+WITH monthly_expenses AS (
+    SELECT 
+        user_id,
+        DATE_TRUNC('month', date) as month,
+        SUM(amount) as total_expense
+    FROM expenses
+    GROUP BY user_id, DATE_TRUNC('month', date)
+),
+monthly_trips AS (
+    SELECT 
+        user_id,
+        DATE_TRUNC('month', start_date) as month,
+        COUNT(id) as trip_count,
+        SUM(sell_amount) as total_revenue
+    FROM trips
+    GROUP BY user_id, DATE_TRUNC('month', start_date)
+)
 SELECT 
-    user_id,
-    DATE_TRUNC('month', start_date) as month,
-    COUNT(id) as trip_count,
-    SUM(sell_amount) as total_revenue,
-    (SELECT SUM(amount) FROM expenses WHERE expenses.user_id = trips.user_id AND DATE_TRUNC('month', expenses.date) = DATE_TRUNC('month', trips.start_date)) as total_expense,
-    SUM(sell_amount) - (SELECT SUM(amount) FROM expenses WHERE expenses.user_id = trips.user_id AND DATE_TRUNC('month', expenses.date) = DATE_TRUNC('month', trips.start_date)) as profit
-FROM trips
-GROUP BY user_id, DATE_TRUNC('month', start_date);
+    t.user_id,
+    t.month,
+    t.trip_count,
+    t.total_revenue,
+    COALESCE(e.total_expense, 0) as total_expense,
+    (t.total_revenue - COALESCE(e.total_expense, 0)) as profit
+FROM monthly_trips t
+LEFT JOIN monthly_expenses e ON t.user_id = e.user_id AND t.month = e.month;
+

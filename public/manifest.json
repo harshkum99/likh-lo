@@ -1,0 +1,21 @@
+{
+  "name": "Likh-lo Truck Tracker",
+  "short_name": "Likh-lo",
+  "description": "Premium truck expense and profit tracker",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a365d",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
