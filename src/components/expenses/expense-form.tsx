@@ -28,6 +28,8 @@ interface Category {
   id: string
   name: string
   is_default: boolean
+  is_active: boolean
+  user_id?: string
 }
 
 export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: Category[] }) {
