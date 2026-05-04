@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Truck, MapPin, Calendar, Wallet, Receipt, ChevronLeft } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import { closeTrip } from '@/app/trips/actions'
+import { closeTrip } from '../actions'
+
 
 
 export default async function TripDetailPage({ params }: { params: { id: string } }) {

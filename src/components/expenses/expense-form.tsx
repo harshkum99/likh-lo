@@ -13,7 +13,8 @@ import {
 } from '@/components/ui/select'
 import { CategoryGrid } from './category-grid'
 import { AmountInput } from './amount-input'
-import { addExpense } from '@/app/expenses/actions'
+import { addExpense } from '../../app/expenses/actions'
+
 import { cn } from '@/lib/utils'
 
 interface Trip {
