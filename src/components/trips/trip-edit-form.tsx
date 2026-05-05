@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Truck, MapPin, Package, Calendar, ChevronLeft, CreditCard, Receipt, Loader2 } from 'lucide-react'
 import { updateTrip } from '@/app/trips/actions'
-import { updateExpense, deleteExpense, addBatchExpenses } from '@/app/expenses/actions'
+import { syncTripExpenses } from '@/app/expenses/actions'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { CategoryGrid } from '@/components/expenses/category-grid'
@@ -29,7 +29,6 @@ interface Expense {
   amount: number
   category_id: string
   date: string
-  categories?: { name: string } | { name: string }[]
 }
 
 interface Category {
@@ -37,6 +36,7 @@ interface Category {
   name: string
   is_default: boolean
   is_active: boolean
+  category_group?: string
 }
 
 export function TripEditForm({ 
@@ -82,8 +82,13 @@ export function TripEditForm({
       })
 
       if (result.success) {
-        // Now handle expense sync
-        await syncExpenses()
+        // Sync expenses
+        const expensesToSync = Object.entries(amounts).map(([catId, amt]) => ({
+          categoryId: catId,
+          amount: parseFloat(amt) || 0
+        }))
+        await syncTripExpenses(trip.id, expensesToSync)
+        
         router.push(`/trips/${trip.id}`)
         router.refresh()
       } else {
@@ -93,36 +98,6 @@ export function TripEditForm({
       alert(error.message || 'An error occurred')
     } finally {
       setLoading(false)
-    }
-  }
-
-  const syncExpenses = async () => {
-    // 1. Identify which expenses need to be deleted, updated, or created
-    const currentCategoryIds = new Set(initialExpenses.map(e => e.category_id))
-    const updatedCategoryIds = new Set(Object.keys(amounts).filter(id => parseFloat(amounts[id]) > 0))
-
-    // Expenses to delete (were in trip, now 0/empty)
-    const toDelete = initialExpenses.filter(e => !updatedCategoryIds.has(e.category_id))
-    
-    // Expenses to update (changed amount)
-    const toUpdate = initialExpenses.filter(e => 
-      updatedCategoryIds.has(e.category_id) && 
-      parseFloat(amounts[e.category_id]) !== e.amount
-    )
-
-    // Expenses to create (newly added amounts)
-    const toCreate = Object.keys(amounts)
-      .filter(id => parseFloat(amounts[id]) > 0 && !currentCategoryIds.has(id))
-      .map(id => ({ categoryId: id, amount: parseFloat(amounts[id]) }))
-
-    // Execute operations
-    const deletePromises = toDelete.map(e => deleteExpense(e.id))
-    const updatePromises = toUpdate.map(e => updateExpense(e.id, { amount: parseFloat(amounts[e.category_id]) }))
-    
-    await Promise.all([...deletePromises, ...updatePromises])
-    
-    if (toCreate.length > 0) {
-      await addBatchExpenses(trip.id, toCreate)
     }
   }
 

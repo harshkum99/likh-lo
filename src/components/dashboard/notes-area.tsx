@@ -161,22 +161,22 @@ export function NotesArea({ initialNotes }: { initialNotes: Note[] }) {
                       })}
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="flex flex-col gap-1">
                     <Button 
                       size="sm" 
                       variant="ghost" 
-                      className="h-8 w-8 p-0"
+                      className="h-8 w-8 p-0 text-zinc-300 hover:text-zinc-500"
                       onClick={() => startEditing(note)}
                     >
-                      <Edit2 className="h-3.5 w-3.5 text-zinc-400" />
+                      <Edit2 className="h-3.5 w-3.5" />
                     </Button>
                     <Button 
                       size="sm" 
                       variant="ghost" 
-                      className="h-8 w-8 p-0"
+                      className="h-8 w-8 p-0 text-zinc-200 hover:text-red-400"
                       onClick={() => handleDeleteNote(note.id)}
                     >
-                      <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </Button>
                   </div>
                 </div>

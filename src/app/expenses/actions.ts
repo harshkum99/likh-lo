@@ -61,7 +61,74 @@ export async function addExpense(formData: FormData) {
   return { success: true }
 }
 
-export async function addBatchExpenses(tripId: string, expenses: { categoryId: string, amount: number }[]) {
+export async function syncTripExpenses(tripId: string, expenses: { categoryId: string, amount: number }[]) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  // 1. Fetch current expenses for this trip
+  const { data: current } = await supabase
+    .from('expenses')
+    .select('id, category_id, amount')
+    .eq('trip_id', tripId)
+    .eq('user_id', user.id)
+
+  const currentMap = new Map(current?.map(e => [e.category_id, e]) || [])
+  const updatedMap = new Map(expenses.map(e => [e.categoryId, e]))
+
+  // 2. Identify changes
+  const toDelete: string[] = []
+  const toUpdate: { id: string, amount: number }[] = []
+  const toInsert: { trip_id: string, user_id: string, category_id: string, amount: number, date: string }[] = []
+
+  // Check existing
+  currentMap.forEach((exp, catId) => {
+    const updated = updatedMap.get(catId)
+    if (!updated || updated.amount <= 0) {
+      toDelete.push(exp.id)
+    } else if (Number(updated.amount) !== Number(exp.amount)) {
+      toUpdate.push({ id: exp.id, amount: updated.amount })
+    }
+  })
+
+  // Check new
+  updatedMap.forEach((updated, catId) => {
+    if (updated.amount > 0 && !currentMap.has(catId)) {
+      toInsert.push({
+        trip_id: tripId,
+        user_id: user.id,
+        category_id: catId,
+        amount: updated.amount,
+        date: new Date().toISOString().split('T')[0]
+      })
+    }
+  })
+
+  // 3. Execute
+  if (toDelete.length > 0) {
+    await supabase.from('expenses').delete().in('id', toDelete)
+  }
+
+  for (const up of toUpdate) {
+    await supabase.from('expenses').update({ amount: up.amount }).eq('id', up.id)
+  }
+
+  if (toInsert.length > 0) {
+    await supabase.from('expenses').insert(toInsert)
+  }
+
+  revalidatePath('/expenses')
+  revalidatePath(`/trips/${tripId}`)
+  revalidatePath('/dashboard')
+  revalidatePath('/trips')
+
+  return { success: true }
+}
+
+export async function addBatchExpenses(tripId: string, expenses: { categoryId: string, amount: number, notes?: string }[]) {
   const supabase = await createClient()
   
   if (!tripId || !expenses || expenses.length === 0) {
@@ -80,6 +147,7 @@ export async function addBatchExpenses(tripId: string, expenses: { categoryId: s
     category_id: exp.categoryId,
     trip_id: tripId,
     user_id: user.id,
+    notes: exp.notes || null,
     date: new Date().toISOString().split('T')[0] // Today
   }))
 

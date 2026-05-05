@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -12,7 +12,8 @@ import {
   SelectValue 
 } from '@/components/ui/select'
 import { CategoryGrid } from './category-grid'
-import { addBatchExpenses } from '../../app/expenses/actions'
+import { syncTripExpenses } from '../../app/expenses/actions'
+import { createClient } from '@/utils/supabase/client'
 
 import { cn } from '@/lib/utils'
 
@@ -29,17 +30,54 @@ interface Category {
   name: string
   is_default: boolean
   is_active: boolean
+  category_group?: string
   user_id?: string
 }
 
 export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: Category[] }) {
-
   const activeTrip = trips.find(t => t.status === 'running')
   
   const [amounts, setAmounts] = useState<Record<string, string>>({})
   const [tripId, setTripId] = useState<string>(activeTrip?.id || trips[0]?.id || '')
+  const [usedCategoryIds, setUsedCategoryIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+  const supabase = createClient()
+
+  // Fetch existing expenses for the selected trip to pre-fill
+  useEffect(() => {
+    async function fetchExistingExpenses() {
+      if (!tripId) {
+        setAmounts({})
+        setUsedCategoryIds(new Set())
+        return
+      }
+
+      setLoading(true)
+      const { data } = await supabase
+        .from('expenses')
+        .select('category_id, amount')
+        .eq('trip_id', tripId)
+      
+      if (data) {
+        const newAmounts: Record<string, string> = {}
+        const usedIds = new Set<string>()
+        
+        data.forEach(exp => {
+          newAmounts[exp.category_id] = exp.amount.toString()
+          usedIds.add(exp.category_id)
+        })
+        
+        setAmounts(newAmounts)
+        setUsedCategoryIds(usedIds)
+      } else {
+        setAmounts({})
+        setUsedCategoryIds(new Set())
+      }
+      setLoading(false)
+    }
+    fetchExistingExpenses()
+  }, [tripId, supabase])
 
   const handleAmountChange = (categoryId: string, amount: string) => {
     setAmounts(prev => ({
@@ -51,26 +89,22 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
-    const validExpenses = Object.entries(amounts)
-      .filter(([_, amt]) => amt && parseFloat(amt) > 0)
-      .map(([catId, amt]) => ({
-        categoryId: catId,
-        amount: parseFloat(amt)
-      }))
+    // We send ALL amounts to sync (including 0 to delete)
+    const expensesToSync = Object.entries(amounts).map(([catId, amt]) => ({
+      categoryId: catId,
+      amount: parseFloat(amt) || 0
+    }))
 
-    if (validExpenses.length === 0 || !tripId) {
-      return
-    }
+    if (!tripId) return
 
     setLoading(true)
     try {
-      const result = await addBatchExpenses(tripId, validExpenses)
+      const result = await syncTripExpenses(tripId, expensesToSync)
       
       if (result.success) {
-        setAmounts({})
         router.refresh()
       } else {
-        alert(result.error || 'Failed to add expenses')
+        alert(result.error || 'Failed to save expenses')
       }
     } catch (error) {
       console.error('Error:', error)
@@ -86,47 +120,54 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col">
       {/* Trip Selector Section */}
-      <div className="px-6 py-4 space-y-2">
-        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400">
-          Selected Trip
+      <div className="px-6 py-4 space-y-3">
+        <label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 px-1">
+          Active Trip
         </label>
         <Select value={tripId} onValueChange={(val) => val && setTripId(val)}>
-
-          <SelectTrigger className="w-full h-14 px-4 rounded-2xl border-zinc-100 bg-zinc-50 dark:bg-zinc-900 dark:border-zinc-800 shadow-sm">
+          <SelectTrigger className="w-full h-16 px-5 rounded-[1.5rem] border-none bg-zinc-50 dark:bg-zinc-900 shadow-sm focus:ring-1 focus:ring-zinc-200">
             <SelectValue placeholder="Select a trip">
               {selectedTrip && (
-                <span className="flex items-center gap-2">
-                  <span className={cn(
-                    "h-2 w-2 rounded-full shrink-0",
-                    selectedTrip.status === 'running' ? "bg-green-500" : "bg-zinc-400"
-                  )} />
-                  <span className="font-bold text-sm">
-                    {selectedTrip.commodity || 'Unnamed Trip'} · {selectedTrip.route || 'Local'}
+                <div className="flex flex-col items-start gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <span className={cn(
+                      "h-1.5 w-1.5 rounded-full shrink-0",
+                      selectedTrip.status === 'running' ? "bg-green-500" : "bg-zinc-400"
+                    )} />
+                    <span className="font-black text-sm tracking-tight text-[#1a365d] dark:text-zinc-100">
+                      {selectedTrip.commodity || 'Unnamed Trip'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-3">
+                    {selectedTrip.route || 'Local'}
                   </span>
-                </span>
+                </div>
               )}
             </SelectValue>
           </SelectTrigger>
-          <SelectContent className="rounded-2xl border-zinc-100 shadow-xl">
+          <SelectContent className="rounded-[1.5rem] border-none shadow-2xl p-2">
             {trips.length === 0 && (
-              <div className="p-4 text-center text-sm text-zinc-500">
-                No trips found. <Link href="/trips/new" className="text-blue-500 underline">Start one</Link>
+              <div className="p-8 text-center space-y-3">
+                <p className="text-sm font-bold text-zinc-400">No trips found</p>
+                <Link href="/trips/new">
+                  <Button variant="outline" size="sm" className="rounded-xl font-bold">Start New Trip</Button>
+                </Link>
               </div>
             )}
             {trips.map((t) => (
-              <SelectItem key={t.id} value={t.id} className="py-3 rounded-xl">
-                <span className="flex flex-col">
-                  <span className="flex items-center gap-2">
-                    <span className={cn(
+              <SelectItem key={t.id} value={t.id} className="py-4 rounded-xl focus:bg-zinc-50 dark:focus:bg-zinc-800">
+                <div className="flex flex-col gap-0.5">
+                  <div className="flex items-center gap-2">
+                    <div className={cn(
                       "h-1.5 w-1.5 rounded-full",
-                      t.status === 'running' ? "bg-green-500" : "bg-zinc-400"
+                      t.status === 'running' ? "bg-green-500" : "bg-zinc-300"
                     )} />
-                    <span className="font-bold">{t.commodity || 'Unnamed'}</span>
+                    <span className="font-black tracking-tight">{t.commodity || 'Unnamed'}</span>
+                  </div>
+                  <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest pl-3">
+                    {t.route || 'Local'} • {new Date(t.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                   </span>
-                  <span className="text-[10px] text-zinc-500 pl-3">
-                    {t.route || 'Local'} • {t.start_date}
-                  </span>
-                </span>
+                </div>
               </SelectItem>
             ))}
           </SelectContent>
@@ -137,28 +178,31 @@ export function ExpenseForm({ trips, categories }: { trips: Trip[], categories: 
 
       {/* Category Section */}
       <div className="px-6 py-4 space-y-4">
-        <label className="text-[10px] font-bold uppercase tracking-[0.15em] text-zinc-400">
-          Enter Expenses
-        </label>
         <CategoryGrid 
           categories={categories} 
           amounts={amounts}
           onAmountChange={handleAmountChange}
+          usedCategoryIds={usedCategoryIds}
         />
       </div>
 
-
       {/* Action Section */}
-      <div className="px-6 py-6 sticky bottom-0 bg-white/80 dark:bg-black/80 backdrop-blur-md">
+      <div className="px-6 py-6 sticky bottom-0 bg-white/80 dark:bg-black/80 backdrop-blur-md z-10 border-t border-zinc-100 dark:border-zinc-800 mt-4">
         <Button 
           type="submit"
           size="lg" 
-          className="w-full h-16 text-lg font-bold bg-[#1a365d] hover:bg-[#1a365d]/90 text-white rounded-2xl shadow-xl transition-all active:scale-[0.98]"
-          disabled={totalAmount === 0 || !tripId || loading}
+          className="w-full h-16 text-lg font-black bg-[#1a365d] hover:bg-[#1a365d]/90 text-white rounded-[1.5rem] shadow-xl transition-all active:scale-[0.98] uppercase tracking-widest"
+          disabled={!tripId || loading}
         >
-          {loading ? 'Adding...' : `Add ${totalAmount > 0 ? `₹${totalAmount}` : 'Expenses'}`}
+          {loading ? (
+            <div className="flex items-center gap-2">
+              <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Processing...
+            </div>
+          ) : (
+            `Update Log ₹${totalAmount.toLocaleString('en-IN')}`
+          )}
         </Button>
-
       </div>
     </form>
   )

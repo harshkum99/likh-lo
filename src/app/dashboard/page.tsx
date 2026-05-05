@@ -1,9 +1,10 @@
 import { createClient } from '@/utils/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Truck, TrendingUp, TrendingDown, Wallet, Plus } from 'lucide-react'
+import { Truck, Plus, Receipt } from 'lucide-react'
 import Link from 'next/link'
 import { NotesArea } from '@/components/dashboard/notes-area'
+import { cn } from '@/lib/utils'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -32,6 +33,25 @@ export default async function DashboardPage() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
+  // Fetch total expenses for active trip
+  let activeTripSpent = 0
+  if (activeTrip) {
+    const { data: expenses } = await supabase
+      .from('expenses')
+      .select('amount')
+      .eq('trip_id', activeTrip.id)
+    
+    activeTripSpent = expenses?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
+  }
+
+  // Fetch 3 most recent expenses
+  const { data: recentExpenses } = await supabase
+    .from('expenses')
+    .select('*, categories(name)')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(3)
+
   // Fetch dashboard notes
   const { data: notesData } = await supabase
     .from('dashboard_notes')
@@ -39,18 +59,18 @@ export default async function DashboardPage() {
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
 
-  const stats = [
-    { label: 'Total Trips', value: totalTrips || 0, icon: Truck, color: 'text-orange-600', bg: 'bg-orange-100' },
-    { label: 'Revenue', value: `₹${reportData?.total_revenue || 0}`, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-100' },
-    { label: 'Expense', value: `₹${reportData?.total_expense || 0}`, icon: TrendingDown, color: 'text-red-600', bg: 'bg-red-100' },
-    { label: 'Profit', value: `₹${reportData?.profit || 0}`, icon: Wallet, color: 'text-blue-600', bg: 'bg-blue-100' },
-  ]
+  const dayCount = activeTrip 
+    ? Math.floor((new Date().getTime() - new Date(activeTrip.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1
+    : 0
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-black p-6 pb-24">
       <div className="max-w-md mx-auto space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div>
+            <h1 className="text-2xl font-bold">Likh-Lo</h1>
+            <p className="text-xs text-zinc-500 font-medium uppercase tracking-wider">Driver Dashboard</p>
+          </div>
           <Link href="/trips/new">
             <Button size="sm" className="rounded-full bg-[#1a365d] h-10 w-10 p-0 shadow-lg">
               <Plus className="h-6 w-6" />
@@ -61,29 +81,44 @@ export default async function DashboardPage() {
         {/* Active Trip Card */}
         {activeTrip ? (
           <Card className="bg-[#1a365d] text-white rounded-3xl border-none shadow-xl overflow-hidden relative">
-            <div className="absolute right-0 top-0 p-4 opacity-10">
-              <Truck className="h-24 w-24 rotate-12" />
+            <div className="absolute right-0 top-0 p-4 opacity-5">
+              <Truck className="h-32 w-32 rotate-12" />
             </div>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium opacity-80 uppercase tracking-widest">Active Trip</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-[10px] font-bold opacity-60 uppercase tracking-[0.2em]">
+                Active Trip · Day {dayCount}
+              </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-6">
               <div>
-                <p className="text-2xl font-bold">{activeTrip.commodity || 'Empty'}</p>
-                <p className="text-sm opacity-80">{activeTrip.route || 'No route set'}</p>
+                <p className="text-2xl font-black tracking-tight">{activeTrip.commodity || 'General Load'}</p>
+                <p className="text-sm opacity-70 font-medium">{activeTrip.route || 'Local Route'}</p>
               </div>
-              <div className="flex gap-4">
-                <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
-                  <p className="text-xs opacity-60">Status</p>
-                  <p className="text-sm font-bold">Running</p>
+
+              <div className="h-px bg-white/10 w-full" />
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold opacity-50 uppercase">Revenue</p>
+                  <p className={cn(
+                    "text-xl font-black",
+                    activeTrip.sell_amount === 0 && "opacity-40"
+                  )}>
+                    ₹{activeTrip.sell_amount || 0}
+                  </p>
+                  {activeTrip.sell_amount === 0 && (
+                    <p className="text-[9px] opacity-40 italic">Pending sell amount</p>
+                  )}
                 </div>
-                <div className="bg-white/10 rounded-xl px-4 py-2 text-center">
-                  <p className="text-xs opacity-60">Started</p>
-                  <p className="text-sm font-bold">{new Date(activeTrip.start_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</p>
+                <div className="space-y-1">
+                  <p className="text-[10px] font-bold opacity-50 uppercase">Spent</p>
+                  <p className="text-xl font-black text-orange-400">₹{activeTripSpent}</p>
                 </div>
               </div>
-              <Link href="/expenses">
-                <Button variant="secondary" className="w-full mt-2 font-bold rounded-xl h-12">
+
+              <Link href="/expenses" className="block">
+                <Button className="w-full bg-white text-[#1a365d] hover:bg-zinc-100 font-bold rounded-2xl h-14 shadow-lg flex items-center gap-2">
+                  <Plus className="h-5 w-5" />
                   Add Expense
                 </Button>
               </Link>
@@ -106,26 +141,63 @@ export default async function DashboardPage() {
           </Card>
         )}
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-2 gap-3">
-          {stats.map((stat) => {
-            const Icon = stat.icon
-            return (
-              <Card key={stat.label} className="border-none shadow-sm rounded-2xl">
-                <CardContent className="p-3 flex flex-col items-center gap-1 text-center">
-                  <div className={`${stat.bg} ${stat.color} p-2 rounded-xl`}>
-                    <Icon className="h-5 w-5" />
+        {/* Simplified Stats */}
+        <div className="grid grid-cols-2 gap-4">
+          <Card className="border-none shadow-sm rounded-3xl p-4 bg-white dark:bg-zinc-900">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Trips</p>
+            <p className="text-2xl font-black text-[#1a365d] dark:text-zinc-100">{totalTrips || 0}</p>
+          </Card>
+          <Card className="border-none shadow-sm rounded-3xl p-4 bg-white dark:bg-zinc-900">
+            <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-1">Net P&L</p>
+            <p className={cn(
+              "text-2xl font-black",
+              (reportData?.profit || 0) >= 0 ? "text-green-600" : "text-red-600"
+            )}>
+              ₹{reportData?.profit || 0}
+            </p>
+          </Card>
+        </div>
+
+        {/* Recent Expenses Section */}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              Recent Expenses
+            </h2>
+            <Link href="/expenses" className="text-[10px] font-bold text-blue-600 uppercase hover:underline">
+              See all
+            </Link>
+          </div>
+          <div className="space-y-2">
+            {!recentExpenses || recentExpenses.length === 0 ? (
+              <p className="text-xs text-zinc-500 text-center py-4 bg-zinc-100/50 dark:bg-zinc-900/50 rounded-2xl">No recent expenses</p>
+            ) : (
+              recentExpenses.map((expense) => {
+                const categoryName = Array.isArray(expense.categories) 
+                  ? expense.categories[0]?.name 
+                  : expense.categories?.name;
+                
+                return (
+                  <div key={expense.id} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                    <div className="space-y-1">
+                      <p className="font-bold text-sm">{categoryName || 'General'}</p>
+                      <p className="text-[10px] text-zinc-500 font-medium">
+                        {new Date(expense.date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                      </p>
+                    </div>
+                    <p className="font-black text-zinc-900 dark:text-zinc-100">₹{expense.amount}</p>
                   </div>
-                  <p className="text-[10px] font-bold text-zinc-400 uppercase">{stat.label}</p>
-                  <p className="text-sm font-bold truncate w-full">{stat.value}</p>
-                </CardContent>
-              </Card>
-            )
-          })}
+                )
+              })
+            )}
+          </div>
         </div>
 
         {/* Notes Area */}
-        <NotesArea initialNotes={notesData || []} />
+        <div className="pt-2">
+          <NotesArea initialNotes={notesData || []} />
+        </div>
       </div>
     </div>
   )
