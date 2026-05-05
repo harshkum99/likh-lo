@@ -55,7 +55,7 @@ export async function deleteTrip(tripId: string) {
   redirect('/trips')
 }
 
-export async function updateTrip(tripId: string, data: { commodity: string, route: string, sell_amount?: number, status?: 'running' | 'completed', start_date?: string }) {
+export async function updateTrip(tripId: string, data: { commodity: string, route: string, vehicle_number?: string, sell_amount?: number, status?: 'running' | 'completed', start_date?: string }) {
   const supabase = await createClient()
   
   const { data: { user } } = await supabase.auth.getUser()

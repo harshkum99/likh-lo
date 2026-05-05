@@ -83,6 +83,11 @@ export default async function TripDetailPage({ params }: { params: { id: string 
               <p className="text-sm font-bold">{trip.route || 'Local'}</p>
             </Card>
             <Card className="border-none shadow-sm rounded-2xl p-4 space-y-2">
+              <Truck className="h-4 w-4 text-zinc-400" />
+              <p className="text-[10px] font-bold text-zinc-400 uppercase">Vehicle</p>
+              <p className="text-sm font-bold">{trip.vehicle_number || 'N/A'}</p>
+            </Card>
+            <Card className="border-none shadow-sm rounded-2xl p-4 space-y-2">
               <Calendar className="h-4 w-4 text-zinc-400" />
               <p className="text-[10px] font-bold text-zinc-400 uppercase">Started</p>
               <p className="text-sm font-bold">{new Date(trip.start_date).toLocaleDateString()}</p>
@@ -99,15 +104,22 @@ export default async function TripDetailPage({ params }: { params: { id: string 
               {expenses?.length === 0 ? (
                 <p className="text-center py-8 text-zinc-400 text-sm">No expenses logged yet.</p>
               ) : (
-                expenses?.map((expense) => (
-                  <div key={expense.id} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl flex items-center justify-between shadow-sm">
-                    <div>
-                      <p className="font-bold text-sm">{expense.categories?.name}</p>
-                      <p className="text-[10px] text-zinc-500">{new Date(expense.date).toLocaleDateString()}</p>
+                expenses?.map((expense) => {
+                  // Handle both array and object responses for joined categories
+                  const categoryName = Array.isArray(expense.categories) 
+                    ? expense.categories[0]?.name 
+                    : expense.categories?.name;
+                    
+                  return (
+                    <div key={expense.id} className="bg-white dark:bg-zinc-900 p-4 rounded-2xl flex items-center justify-between shadow-sm">
+                      <div>
+                        <p className="font-bold text-sm">{categoryName || 'Unknown Category'}</p>
+                        <p className="text-[10px] text-zinc-500">{new Date(expense.date).toLocaleDateString()}</p>
+                      </div>
+                      <p className="font-black text-red-500">₹{expense.amount}</p>
                     </div>
-                    <p className="font-black text-red-500">₹{expense.amount}</p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

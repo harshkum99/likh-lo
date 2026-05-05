@@ -98,6 +98,59 @@ export async function addBatchExpenses(tripId: string, expenses: { categoryId: s
   return { success: true }
 }
 
+export async function updateExpense(expenseId: string, data: { category_id?: string, amount?: number, date?: string, notes?: string }) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const { error } = await supabase
+    .from('expenses')
+    .update(data)
+    .eq('id', expenseId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('Update expense error:', error)
+    return { success: false, error: 'Failed to update expense' }
+  }
+
+  revalidatePath('/expenses')
+  revalidatePath('/dashboard')
+  // We don't know the trip ID here, so we might need to pass it or revalidate all trips
+  revalidatePath('/trips')
+  
+  return { success: true }
+}
+
+export async function deleteExpense(expenseId: string) {
+  const supabase = await createClient()
+  
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  if (authError || !user) {
+    return { success: false, error: 'Unauthorized' }
+  }
+
+  const { error } = await supabase
+    .from('expenses')
+    .delete()
+    .eq('id', expenseId)
+    .eq('user_id', user.id)
+
+  if (error) {
+    console.error('Delete expense error:', error)
+    return { success: false, error: 'Failed to delete expense' }
+  }
+
+  revalidatePath('/expenses')
+  revalidatePath('/dashboard')
+  revalidatePath('/trips')
+  
+  return { success: true }
+}
+
 export async function deactivateCategory(categoryId: string) {
   const supabase = await createClient()
   

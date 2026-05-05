@@ -12,6 +12,7 @@ import { createClient } from '@/utils/supabase/client'
 export default function NewTripPage() {
   const [commodity, setCommodity] = useState('')
   const [route, setRoute] = useState('')
+  const [vehicleNumber, setVehicleNumber] = useState('')
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -28,6 +29,7 @@ export default function NewTripPage() {
       const { error } = await supabase.from('trips').insert({
         commodity,
         route,
+        vehicle_number: vehicleNumber,
         user_id: user.id,
         status: 'running',
         start_date: startDate
@@ -73,6 +75,22 @@ export default function NewTripPage() {
                     value={commodity}
                     onChange={(e) => setCommodity(e.target.value)}
                     required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="vehicleNumber" className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                  Vehicle Number
+                </Label>
+                <div className="relative">
+                  <Truck className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
+                  <Input 
+                    id="vehicleNumber"
+                    placeholder="e.g. RJ 14 GB 1234"
+                    className="pl-10 h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-xl"
+                    value={vehicleNumber}
+                    onChange={(e) => setVehicleNumber(e.target.value)}
                   />
                 </div>
               </div>

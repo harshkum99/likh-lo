@@ -18,10 +18,28 @@ export default async function EditTripPage({ params }: { params: { id: string } 
 
   if (!trip) notFound()
 
+  // Fetch categories for the expense editing
+  const { data: categories } = await supabase
+    .from('categories')
+    .select('*')
+    .or(`user_id.eq.${user.id},is_default.eq.true`)
+    .order('sort_order', { ascending: true })
+
+  // Fetch expenses for this trip
+  const { data: expenses } = await supabase
+    .from('expenses')
+    .select('*, categories(name)')
+    .eq('trip_id', id)
+    .order('date', { ascending: false })
+
   return (
     <div className="min-h-screen bg-white dark:bg-black p-6 pb-24">
       <div className="max-w-md mx-auto">
-        <TripEditForm trip={trip} />
+        <TripEditForm 
+          trip={trip} 
+          expenses={expenses || []} 
+          categories={categories || []}
+        />
       </div>
     </div>
   )

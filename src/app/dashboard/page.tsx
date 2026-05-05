@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Truck, TrendingUp, TrendingDown, Wallet, Plus } from 'lucide-react'
 import Link from 'next/link'
+import { NotesArea } from '@/components/dashboard/notes-area'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -31,6 +32,12 @@ export default async function DashboardPage() {
     .select('*', { count: 'exact', head: true })
     .eq('user_id', user.id)
 
+  // Fetch dashboard notes
+  const { data: notesData } = await supabase
+    .from('dashboard_notes')
+    .select('id, content, updated_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
 
   const stats = [
     { label: 'Total Trips', value: totalTrips || 0, icon: Truck, color: 'text-orange-600', bg: 'bg-orange-100' },
@@ -116,6 +123,9 @@ export default async function DashboardPage() {
             )
           })}
         </div>
+
+        {/* Notes Area */}
+        <NotesArea initialNotes={notesData || []} />
       </div>
     </div>
   )
