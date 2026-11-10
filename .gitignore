@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# self-hosted OCR runtime + models (scripts/fetch-ocr-assets.mjs)
+/public/ort/
+/public/models/

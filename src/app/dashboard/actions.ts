@@ -1,13 +1,15 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
+import { currentUserId } from '@/lib/data'
 import { revalidatePath } from 'next/cache'
 
 export async function createDashboardNote(content: string) {
   const supabase = await createClient()
   
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  const userId = await currentUserId(supabase)
+  const user = userId ? { id: userId } : null
+  if (!user) {
     return { success: false, error: 'Unauthorized' }
   }
 
@@ -27,8 +29,9 @@ export async function createDashboardNote(content: string) {
 export async function updateDashboardNote(id: string, content: string) {
   const supabase = await createClient()
   
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  const userId = await currentUserId(supabase)
+  const user = userId ? { id: userId } : null
+  if (!user) {
     return { success: false, error: 'Unauthorized' }
   }
 
@@ -50,8 +53,9 @@ export async function updateDashboardNote(id: string, content: string) {
 export async function deleteDashboardNote(id: string) {
   const supabase = await createClient()
   
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
+  const userId = await currentUserId(supabase)
+  const user = userId ? { id: userId } : null
+  if (!user) {
     return { success: false, error: 'Unauthorized' }
   }
 

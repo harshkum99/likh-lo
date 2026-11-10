@@ -1,50 +1,35 @@
-import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
-import { TripList } from '@/components/trips/trip-list'
+import { Plus } from 'lucide-react'
+import { Page } from '@/components/app/page'
+import { Button } from '@/components/ui/button'
+import { TripsView, type StatusFilter } from '@/components/trips/trips-view'
+import { summarizeTrips } from '@/lib/analytics'
+import { getExpenses, getTrips, requireUser } from '@/lib/data'
 
-export default async function TripsPage() {
-  const supabase = await createClient()
-  
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+export const metadata: Metadata = { title: 'Trips' }
 
-  // Fetch trips with their expenses to calculate totals
-  const { data: tripsData } = await supabase
-    .from('trips')
-    .select(`
-      *,
-      expenses (
-        amount
-      )
-    `)
-    .eq('user_id', user.id)
-    .order('start_date', { ascending: false })
-
-  const trips = tripsData?.map(trip => ({
-    ...trip,
-    total_spent: trip.expenses?.reduce((acc: number, curr: any) => acc + Number(curr.amount), 0) || 0
-  })) || []
+export default async function TripsPage({ searchParams }: PageProps<'/trips'>) {
+  const [{ supabase, user }, sp] = await Promise.all([requireUser(), searchParams])
+  const [trips, expenses] = await Promise.all([getTrips(supabase, user.id), getExpenses(supabase, user.id)])
+  // Ship per-trip summaries, not every expense row, to the client.
+  const summaries = [...summarizeTrips(trips, expenses).values()]
+  const status: StatusFilter = sp.status === 'running' || sp.status === 'completed' ? sp.status : 'all'
+  const vehicle = typeof sp.vehicle === 'string' ? sp.vehicle : null
+  const running = trips.filter(t => t.status === 'running').length
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black pb-24">
-      <div className="max-w-md mx-auto">
-        <div className="p-6 pb-2 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-black tracking-tight uppercase">My Trips</h1>
-            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-[0.2em]">Journey History</p>
-          </div>
-          <Link href="/trips/new">
-            <Button size="sm" className="rounded-full bg-[#1a365d] h-12 w-12 p-0 shadow-lg transition-transform active:scale-95">
-              <Plus className="h-6 w-6" />
-            </Button>
-          </Link>
-        </div>
-
-        <TripList initialTrips={trips} />
-      </div>
-    </div>
+    <Page
+      title="Trips"
+      subtitle={trips.length ? `${trips.length} ${trips.length === 1 ? 'trip' : 'trips'} · ${running} running` : 'Every load, start to sale'}
+      actions={
+        <Button render={<Link href="/trips/new" />} nativeButton={false} className="h-11 rounded-xl px-4">
+          <Plus /> New trip
+        </Button>
+      }
+    >
+      {/* key: a new ?status / ?vehicle link resets the client filters */}
+      <TripsView key={`${status}|${vehicle}`} summaries={summaries} initialStatus={status} initialVehicle={vehicle} />
+    </Page>
   )
 }

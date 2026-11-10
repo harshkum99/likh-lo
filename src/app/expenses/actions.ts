@@ -1,313 +1,152 @@
 'use server'
 
-import { createClient } from '@/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { createClient } from '@/utils/supabase/server'
+import { cleanAmount, cleanDate, cleanText, currentUserId, dbError, guessGroup } from '@/lib/data'
+import { todayISO } from '@/lib/format'
+import type { ActionResult, PaidBy } from '@/lib/types'
 
-export async function addExpense(formData: FormData) {
+export interface NewExpenseInput {
+  categoryId: string
+  amount: number
+  notes?: string
+  date?: string
+  paidBy?: PaidBy
+}
+
+async function authed() {
   const supabase = await createClient()
-  
-  const amountStr = formData.get('amount') as string
-  const categoryName = formData.get('categoryName') as string
-  const tripId = formData.get('tripId') as string
-  
-  if (!amountStr || !categoryName || !tripId) {
-    return { success: false, error: 'Amount, category, and trip are required' }
-  }
+  const id = await currentUserId(supabase)
+  return { supabase, user: id ? { id } : null }
+}
 
+/** Every page shows aggregates, so any write refreshes the whole app. */
+function refreshAll() {
+  revalidatePath('/', 'layout')
+}
 
-  const amount = parseFloat(amountStr)
+/** Adds new expense rows to a trip (quick entry). Amounts are additions, never totals. */
+export async function addBatchExpenses(tripId: string, rows: NewExpenseInput[]): Promise<ActionResult<{ count: number }>> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+  if (!tripId || !Array.isArray(rows) || rows.length === 0) return { success: false, error: 'Pick a trip and enter at least one amount.' }
+  if (rows.length > 200) return { success: false, error: 'Too many rows in one save (max 200).' }
 
-  // 1. Get current user
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
+  const { data: trip } = await supabase.from('trips').select('id').eq('id', tripId).eq('user_id', user.id).maybeSingle()
+  if (!trip) return { success: false, error: 'Trip not found.' }
 
-  // 2. Get category ID from name
-  console.log('Looking up category:', categoryName)
-  const { data: categoryData, error: catError } = await supabase
-    .from('categories')
-    .select('id')
-    .eq('name', categoryName)
-    .order('is_default', { ascending: false }) // Prefer default categories if there's a conflict
-    .limit(1)
-    .maybeSingle()
-
-  if (catError || !categoryData) {
-    console.error('Category lookup error:', catError)
-    return { success: false, error: `Category "${categoryName}" not found` }
-  }
-
-  // 3. Insert the expense
-  console.log('Inserting expense for trip:', tripId)
-  const { error: insertError } = await supabase
-    .from('expenses')
-    .insert({
-      amount,
-      category_id: categoryData.id,
+  const insert = []
+  for (const r of rows) {
+    const amount = cleanAmount(r.amount)
+    if (!amount || typeof r.categoryId !== 'string') return { success: false, error: 'Every row needs a category and an amount above zero.' }
+    insert.push({
       trip_id: tripId,
       user_id: user.id,
-      date: new Date().toISOString().split('T')[0] // Today
+      category_id: r.categoryId,
+      amount,
+      notes: cleanText(r.notes),
+      date: cleanDate(r.date) ?? todayISO(),
+      ...(r.paidBy === 'driver' ? { paid_by: 'driver' } : {}),
     })
-
-  if (insertError) {
-    console.error('Insert error:', insertError)
-    return { success: false, error: insertError.message }
   }
 
-  revalidatePath('/expenses')
-  revalidatePath('/dashboard')
-  
+  const { error } = await supabase.from('expenses').insert(insert)
+  if (error) return { success: false, error: dbError(error.message) }
+  refreshAll()
+  return { success: true, count: insert.length }
+}
+
+export async function updateExpense(
+  expenseId: string,
+  patch: { category_id?: string; amount?: number; date?: string; notes?: string | null; paid_by?: PaidBy },
+): Promise<ActionResult> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+
+  const update: Record<string, unknown> = {}
+  if (patch.category_id !== undefined) update.category_id = patch.category_id
+  if (patch.amount !== undefined) {
+    const amount = cleanAmount(patch.amount)
+    if (!amount) return { success: false, error: 'Amount must be above zero.' }
+    update.amount = amount
+  }
+  if (patch.date !== undefined) {
+    const date = cleanDate(patch.date)
+    if (!date) return { success: false, error: 'Invalid date.' }
+    update.date = date
+  }
+  if (patch.notes !== undefined) update.notes = cleanText(patch.notes)
+  if (patch.paid_by !== undefined) update.paid_by = patch.paid_by === 'driver' ? 'driver' : 'owner'
+
+  const { error } = await supabase.from('expenses').update(update).eq('id', expenseId).eq('user_id', user.id)
+  if (error) return { success: false, error: dbError(error.message) }
+  refreshAll()
   return { success: true }
 }
 
-export async function syncTripExpenses(tripId: string, expenses: { categoryId: string, amount: number }[]) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  // 1. Fetch current expenses for this trip
-  const { data: current } = await supabase
-    .from('expenses')
-    .select('id, category_id, amount')
-    .eq('trip_id', tripId)
-    .eq('user_id', user.id)
-
-  const currentMap = new Map(current?.map(e => [e.category_id, e]) || [])
-  const updatedMap = new Map(expenses.map(e => [e.categoryId, e]))
-
-  // 2. Identify changes
-  const toDelete: string[] = []
-  const toUpdate: { id: string, amount: number }[] = []
-  const toInsert: { trip_id: string, user_id: string, category_id: string, amount: number, date: string }[] = []
-
-  // Check existing
-  currentMap.forEach((exp, catId) => {
-    const updated = updatedMap.get(catId)
-    if (!updated || updated.amount <= 0) {
-      toDelete.push(exp.id)
-    } else if (Number(updated.amount) !== Number(exp.amount)) {
-      toUpdate.push({ id: exp.id, amount: updated.amount })
-    }
-  })
-
-  // Check new
-  updatedMap.forEach((updated, catId) => {
-    if (updated.amount > 0 && !currentMap.has(catId)) {
-      toInsert.push({
-        trip_id: tripId,
-        user_id: user.id,
-        category_id: catId,
-        amount: updated.amount,
-        date: new Date().toISOString().split('T')[0]
-      })
-    }
-  })
-
-  // 3. Execute
-  if (toDelete.length > 0) {
-    await supabase.from('expenses').delete().in('id', toDelete)
-  }
-
-  for (const up of toUpdate) {
-    await supabase.from('expenses').update({ amount: up.amount }).eq('id', up.id)
-  }
-
-  if (toInsert.length > 0) {
-    await supabase.from('expenses').insert(toInsert)
-  }
-
-  revalidatePath('/expenses')
-  revalidatePath(`/trips/${tripId}`)
-  revalidatePath('/dashboard')
-  revalidatePath('/trips')
-
+export async function deleteExpense(expenseId: string): Promise<ActionResult> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+  const { error } = await supabase.from('expenses').delete().eq('id', expenseId).eq('user_id', user.id)
+  if (error) return { success: false, error: error.message }
+  refreshAll()
   return { success: true }
 }
 
-export async function addBatchExpenses(tripId: string, expenses: { categoryId: string, amount: number, notes?: string }[]) {
-  const supabase = await createClient()
-  
-  if (!tripId || !expenses || expenses.length === 0) {
-    return { success: false, error: 'Trip and at least one expense are required' }
-  }
-
-  // 1. Get current user
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  // 2. Insert the expenses
-  const expensesToInsert = expenses.map(exp => ({
-    amount: exp.amount,
-    category_id: exp.categoryId,
-    trip_id: tripId,
-    user_id: user.id,
-    notes: exp.notes || null,
-    date: new Date().toISOString().split('T')[0] // Today
-  }))
-
-  const { error: insertError } = await supabase
-    .from('expenses')
-    .insert(expensesToInsert)
-
-  if (insertError) {
-    console.error('Insert error:', insertError)
-    return { success: false, error: insertError.message }
-  }
-
-  revalidatePath('/expenses')
-  revalidatePath('/dashboard')
-  
+// shortcut: RLS only lets a user update categories they own, so hiding a *default* category is a silent no-op; needs an
+// owner-scoped "hidden categories" table if hiding defaults matters.
+export async function deactivateCategory(categoryId: string): Promise<ActionResult> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+  const { error } = await supabase.from('categories').update({ is_active: false }).eq('id', categoryId)
+  if (error) return { success: false, error: 'Failed to hide category' }
+  refreshAll()
   return { success: true }
 }
 
-export async function updateExpense(expenseId: string, data: { category_id?: string, amount?: number, date?: string, notes?: string }) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { error } = await supabase
-    .from('expenses')
-    .update(data)
-    .eq('id', expenseId)
-    .eq('user_id', user.id)
-
-  if (error) {
-    console.error('Update expense error:', error)
-    return { success: false, error: 'Failed to update expense' }
-  }
-
-  revalidatePath('/expenses')
-  revalidatePath('/dashboard')
-  // We don't know the trip ID here, so we might need to pass it or revalidate all trips
-  revalidatePath('/trips')
-  
+export async function reactivateCategory(categoryId: string): Promise<ActionResult> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+  const { error } = await supabase.from('categories').update({ is_active: true }).eq('id', categoryId)
+  if (error) return { success: false, error: 'Failed to restore category' }
+  refreshAll()
   return { success: true }
 }
 
-export async function deleteExpense(expenseId: string) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
+export async function createCategory(name: string, group?: string): Promise<ActionResult<{ id: string }>> {
+  const { supabase, user } = await authed()
+  if (!user) return { success: false, error: 'Please sign in again.' }
+  const cleanName = cleanText(name, 60)
+  if (!cleanName) return { success: false, error: 'Enter a category name.' }
 
-  const { error } = await supabase
-    .from('expenses')
-    .delete()
-    .eq('id', expenseId)
-    .eq('user_id', user.id)
-
-  if (error) {
-    console.error('Delete expense error:', error)
-    return { success: false, error: 'Failed to delete expense' }
-  }
-
-  revalidatePath('/expenses')
-  revalidatePath('/dashboard')
-  revalidatePath('/trips')
-  
-  return { success: true }
-}
-
-export async function deactivateCategory(categoryId: string) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  // Set is_active to false to hide it from the grid.
-  // We remove the user_id check to allow hiding default categories too.
-  const { error } = await supabase
-    .from('categories')
-    .update({ is_active: false })
-    .eq('id', categoryId)
-
-  if (error) {
-    console.error('Category deactivation error:', error)
-    return { success: false, error: 'Failed to deactivate category' }
-  }
-
-  revalidatePath('/expenses')
-  return { success: true }
-}
-
-export async function reactivateCategory(categoryId: string) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const { error } = await supabase
-    .from('categories')
-    .update({ is_active: true })
-    .eq('id', categoryId)
-
-  if (error) {
-    console.error('Category reactivation error:', error)
-    return { success: false, error: 'Failed to reactivate category' }
-  }
-
-  revalidatePath('/expenses')
-  return { success: true }
-}
-
-export async function createCategory(name: string) {
-  const supabase = await createClient()
-  
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  if (authError || !user) {
-    return { success: false, error: 'Unauthorized' }
-  }
-
-  const cleanName = name.trim()
-
-  // 1. Check if category already exists (case-insensitive)
   const { data: existing } = await supabase
     .from('categories')
     .select('id, is_active')
     .ilike('name', cleanName)
     .or(`is_default.eq.true,user_id.eq.${user.id}`)
+    .limit(1)
     .maybeSingle()
 
   if (existing) {
-    if (!existing.is_active) {
-      // Reactivate if it was hidden
-      return await reactivateCategory(existing.id)
-    }
-    return { success: false, error: 'A category with this name already exists.' }
+    if (existing.is_active) return { success: false, error: 'A category with this name already exists.' }
+    const res = await reactivateCategory(existing.id)
+    return res.success ? { success: true, id: existing.id } : res
   }
 
-  // 2. Create the new category
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('categories')
     .insert({
       name: cleanName,
       is_default: false,
       is_active: true,
-      user_id: user.id
+      user_id: user.id,
+      sort_order: 100,
+      category_group: group && ['Fuel', 'Labour', 'Material', 'Other'].includes(group) ? group : guessGroup(cleanName),
     })
+    .select('id')
+    .single()
 
-
-  if (error) {
-    console.error('Category creation error:', error)
-    return { success: false, error: 'Failed to create category' }
-  }
-
-  revalidatePath('/expenses')
-  return { success: true }
+  if (error || !data) return { success: false, error: 'Failed to create category' }
+  refreshAll()
+  return { success: true, id: data.id }
 }
-

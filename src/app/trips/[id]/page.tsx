@@ -1,93 +1,109 @@
-import { createClient } from '@/utils/supabase/server'
-import { redirect } from 'next/navigation'
-import { Truck, MapPin, Calendar, ChevronLeft } from 'lucide-react'
+import type { Metadata } from 'next'
 import Link from 'next/link'
-import { cn } from '@/lib/utils'
-import { TripActions } from '@/components/trips/trip-actions'
-import { TripSummaryCard } from '@/components/trips/trip-summary-card'
-import { ExpenseBreakdown } from '@/components/trips/expense-breakdown'
-import { TripExpenseList } from '@/components/trips/trip-expense-list'
+import { notFound } from 'next/navigation'
+import { Plus, ScanLine } from 'lucide-react'
+import { Page, Panel, Section } from '@/components/app/page'
+import { DriverSettlement } from '@/components/trips/driver-settlement'
+import { tripDates } from '@/components/trips/shared'
+import { SpendBreakdown } from '@/components/trips/spend-breakdown'
+import { TripEntries } from '@/components/trips/trip-entries'
+import { TripHeaderActions } from '@/components/trips/trip-header-actions'
+import { TripHero } from '@/components/trips/trip-hero'
+import { summarizeTrips } from '@/lib/analytics'
+import { getCategories, getExpenses, normalizeTrip, requireUser } from '@/lib/data'
 
-export default async function TripDetailPage({ params }: { params: { id: string } }) {
-  const supabase = await createClient()
-  const { id } = await params
+export const metadata: Metadata = { title: 'Trip' }
 
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-  // Fetch trip details
-  const { data: trip } = await supabase
-    .from('trips')
-    .select('*')
-    .eq('id', id)
-    .single()
+export default async function TripPage({ params }: PageProps<'/trips/[id]'>) {
+  const [{ supabase, user }, { id }] = await Promise.all([requireUser(), params])
+  // A malformed id would make Postgres throw (500) instead of returning nothing.
+  if (!UUID.test(id)) notFound()
 
-  if (!trip) return <div>Trip not found</div>
-
-  // Fetch expenses for this trip
-  const { data: expensesData } = await supabase
-    .from('expenses')
-    .select('*, categories(name)')
-    .eq('trip_id', id)
-    .order('date', { ascending: false })
-
-  const expenses = expensesData?.map(exp => ({
-    ...exp,
-    category_name: Array.isArray(exp.categories) ? exp.categories[0]?.name : exp.categories?.name || 'General'
-  })) || []
-
-  const totalExpense = expenses.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0
-  const dayCount = Math.floor((new Date().getTime() - new Date(trip.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1
+  const [{ data }, expenses, categories] = await Promise.all([
+    supabase.from('trips').select('*').eq('id', id).eq('user_id', user.id).maybeSingle(),
+    getExpenses(supabase, user.id, id),
+    getCategories(supabase, user.id),
+  ])
+  if (!data) notFound()
+  const trip = normalizeTrip(data)
+  const s = summarizeTrips([trip], expenses).get(trip.id)!
+  const vehicle = trip.vehicle_number?.toUpperCase()
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black pb-24 px-6">
-      <div className="max-w-md mx-auto space-y-8">
-        <div className="pt-6 space-y-4">
-          <Link href="/trips" className="flex items-center gap-1 text-zinc-400 text-[10px] font-black uppercase tracking-[0.2em] hover:text-[#1a365d] transition-colors">
-            <ChevronLeft className="h-3 w-3" />
-            Back to Trips
-          </Link>
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <h1 className="text-3xl font-black tracking-tight leading-tight">
-                {trip.commodity || 'General Load'}
-              </h1>
-              <div className="flex items-center gap-2 text-zinc-400">
-                <MapPin className="h-3 w-3" />
-                <p className="text-[11px] font-bold uppercase tracking-wider">
-                  {trip.route || 'Local'} · Day {dayCount}
-                </p>
-              </div>
-            </div>
-            {trip.vehicle_number && (
-              <div className="bg-[#1a365d]/5 dark:bg-white/5 px-3 py-1.5 rounded-xl border border-[#1a365d]/10 dark:border-white/10">
-                <p className="text-[10px] font-black text-[#1a365d] dark:text-zinc-400 tracking-wider">
-                  {trip.vehicle_number}
-                </p>
-              </div>
-            )}
+    <Page
+      back="/trips"
+      title={vehicle || trip.commodity || 'Trip'}
+      subtitle={[vehicle ? trip.commodity : null, trip.route, tripDates(trip, s.days)].filter(Boolean).join(' · ')}
+      actions={<TripHeaderActions id={trip.id} entries={s.entries} />}
+    >
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)] lg:items-start">
+        <div className="space-y-6">
+          <TripHero summary={s} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <QuickAction href={`/scan?trip=${trip.id}`} icon={ScanLine} title="Scan register page" hint="Fill entries from a photo" primary />
+            <QuickAction href={`/expenses?trip=${trip.id}`} icon={Plus} title="Add expense" hint="Type it in yourself" />
           </div>
+
+          <Section title="Driver settlement">
+            <DriverSettlement tripId={trip.id} paid={s.driverPaid} advance={trip.driver_advance} />
+          </Section>
+
+          {s.spent > 0 && (
+            <Section title="Where the money went">
+              <SpendBreakdown expenses={expenses} categories={categories} />
+            </Section>
+          )}
+
+          {trip.notes && (
+            <Section title="Notes">
+              <Panel className="p-4 text-sm whitespace-pre-line text-muted-foreground">{trip.notes}</Panel>
+            </Section>
+          )}
         </div>
 
-        {/* Summary Card */}
-        <TripSummaryCard 
-          tripId={id} 
-          status={trip.status} 
-          revenue={trip.sell_amount} 
-          totalExpense={totalExpense} 
-        />
-
-        {/* Expense Breakdown Visualization */}
-        {expenses.length > 0 && <ExpenseBreakdown expenses={expenses} />}
-
-        {/* Action Buttons */}
-        <TripActions tripId={id} />
-
-        <div className="h-px bg-zinc-100 dark:bg-zinc-800 w-full" />
-
-        {/* Expense List */}
-        <TripExpenseList expenses={expenses} tripId={id} />
+        <Section title={`Entries${s.entries ? ` · ${s.entries}` : ''}`}>
+          <TripEntries tripId={trip.id} expenses={expenses} categories={categories} />
+        </Section>
       </div>
-    </div>
+    </Page>
+  )
+}
+
+function QuickAction({
+  href,
+  icon: Icon,
+  title,
+  hint,
+  primary,
+}: {
+  href: string
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  hint: string
+  primary?: boolean
+}) {
+  return (
+    <Link
+      href={href}
+      // Stacked: two side-by-side cards are only ~165px wide at 375px (and in the lg left column).
+      className="flex flex-col gap-3 rounded-2xl border bg-card p-3.5 shadow-sm shadow-black/[0.03] transition outline-none hover:border-primary/30 hover:shadow-md focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.98]"
+    >
+      <span
+        className={
+          primary
+            ? 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm shadow-primary/30'
+            : 'flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground'
+        }
+      >
+        <Icon className="size-5" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm leading-tight font-medium">{title}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </Link>
   )
 }

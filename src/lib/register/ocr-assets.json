@@ -1,0 +1,35 @@
+{
+  "cache": "likh-lo-ocr-1.31.1-wasm-v6s",
+  "files": [
+    {
+      "role": "glue",
+      "path": "/ort/ort-wasm-simd-threaded.mjs",
+      "npm": "onnxruntime-web/dist/ort-wasm-simd-threaded.mjs",
+      "bytes": 24738
+    },
+    {
+      "role": "wasm",
+      "path": "/ort/ort-wasm-simd-threaded.wasm",
+      "npm": "onnxruntime-web/dist/ort-wasm-simd-threaded.wasm",
+      "bytes": 14848852
+    },
+    {
+      "role": "detection",
+      "path": "/models/paddle/PP-OCRv6_small_det.ort",
+      "url": "https://huggingface.co/snowfluke/ppu-paddle-ocr-models/resolve/main/detection/ort/PP-OCRv6_small_det.ort",
+      "bytes": 9982352
+    },
+    {
+      "role": "recognition",
+      "path": "/models/paddle/PP-OCRv6_small_rec.ort",
+      "url": "https://huggingface.co/snowfluke/ppu-paddle-ocr-models/resolve/main/recognition/ort/PP-OCRv6_small_rec.ort",
+      "bytes": 21290816
+    },
+    {
+      "role": "dictionary",
+      "path": "/models/paddle/ppocrv6_dict.txt",
+      "url": "https://huggingface.co/snowfluke/ppu-paddle-ocr-models/resolve/main/recognition/ppocrv6_dict.txt",
+      "bytes": 74948
+    }
+  ]
+}

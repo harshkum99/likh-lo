@@ -1,190 +1,185 @@
 'use client'
 
-import { useState } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Textarea } from '@/components/ui/textarea'
+import { useOptimistic, useState, useTransition } from 'react'
+import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { createDashboardNote, deleteDashboardNote, updateDashboardNote } from '@/app/dashboard/actions'
+import { Panel, Section } from '@/components/app/page'
 import { Button } from '@/components/ui/button'
-import { createDashboardNote, updateDashboardNote, deleteDashboardNote } from '@/app/dashboard/actions'
-import { Plus, Save, Loader2, Trash2, Edit2, X } from 'lucide-react'
+import { Textarea } from '@/components/ui/textarea'
+import { confirmDialog } from '@/components/ui/confirm'
+import { toast } from '@/components/ui/toast'
 
-interface Note {
+export interface Note {
   id: string
   content: string
   updated_at: string
 }
 
+type Change = { type: 'add'; note: Note } | { type: 'update'; id: string; content: string } | { type: 'delete'; id: string }
+
+function applyChange(notes: Note[], c: Change): Note[] {
+  if (c.type === 'add') return [c.note, ...notes]
+  if (c.type === 'delete') return notes.filter(n => n.id !== c.id)
+  return notes.map(n => (n.id === c.id ? { ...n, content: c.content } : n))
+}
+
+let tempId = 0
+const isTemp = (id: string) => id.startsWith('tmp-')
+const INPUT = 'resize-none rounded-xl border-transparent bg-muted/60 px-3.5 py-2.5 field-sizing-content focus-visible:bg-card'
+
+// shortcut: fixed to IST so server and browser render the same text; use the browser's zone if users outside India appear.
+function stamp(iso: string) {
+  return new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+}
+
+/** Quick notes. Changes show instantly (useOptimistic) and roll back with a toast if the server rejects them. */
 export function NotesArea({ initialNotes }: { initialNotes: Note[] }) {
-  const [notes, setNotes] = useState<Note[]>(initialNotes)
-  const [isAdding, setIsAdding] = useState(false)
-  const [newNoteContent, setNewNoteContent] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editContent, setEditContent] = useState('')
-  const [isSaving, setIsSaving] = useState(false)
+  const [notes, apply] = useOptimistic(initialNotes, applyChange)
+  const [, startTransition] = useTransition()
+  const [draft, setDraft] = useState('')
+  const [editing, setEditing] = useState<{ id: string; content: string } | null>(null)
 
-  async function handleAddNote() {
-    if (!newNoteContent.trim()) return
-    setIsSaving(true)
-    const result = await createDashboardNote(newNoteContent)
-    if (result.success) {
-      setNewNoteContent('')
-      setIsAdding(false)
-      // Note: revalidatePath will refresh the server component, 
-      // but for immediate UI feedback we'd usually rely on the server refresh 
-      // or optimistic updates. Here we'll just wait for the refresh.
-    } else {
-      alert('Failed to add note: ' + result.error)
-    }
-    setIsSaving(false)
+  function run(change: Change, action: () => Promise<{ success: boolean; error?: string }>, failTitle: string, onFail?: () => void) {
+    startTransition(async () => {
+      apply(change)
+      // A rejected action (e.g. offline) would otherwise throw into the error boundary.
+      const res = await action().catch(() => ({ success: false, error: 'Check your connection and try again.' }))
+      if (!res.success) {
+        toast.error(failTitle, res.error)
+        onFail?.()
+      }
+    })
   }
 
-  async function handleUpdateNote(id: string) {
-    if (!editContent.trim()) return
-    setIsSaving(true)
-    const result = await updateDashboardNote(id, editContent)
-    if (result.success) {
-      setEditingId(null)
-      setEditContent('')
-    } else {
-      alert('Failed to update note: ' + result.error)
-    }
-    setIsSaving(false)
+  function add() {
+    const content = draft.trim()
+    if (!content) return
+    setDraft('')
+    run(
+      { type: 'add', note: { id: `tmp-${++tempId}`, content, updated_at: new Date().toISOString() } },
+      () => createDashboardNote(content),
+      'Could not save note',
+      () => setDraft(d => (d.trim() ? `${content}\n${d}` : content)),
+    )
   }
 
-  async function handleDeleteNote(id: string) {
-    if (!confirm('Are you sure you want to delete this note?')) return
-    const result = await deleteDashboardNote(id)
-    if (!result.success) {
-      alert('Failed to delete note: ' + result.error)
-    }
+  function save() {
+    if (!editing) return
+    const { id } = editing
+    const content = editing.content.trim()
+    if (!content) return
+    setEditing(null)
+    run({ type: 'update', id, content }, () => updateDashboardNote(id, content), 'Could not update note', () => setEditing({ id, content }))
   }
 
-  function startEditing(note: Note) {
-    setEditingId(note.id)
-    setEditContent(note.content)
+  async function remove(note: Note) {
+    const ok = await confirmDialog({ title: 'Delete this note?', description: 'This cannot be undone.', confirmLabel: 'Delete', destructive: true })
+    if (ok) run({ type: 'delete', id: note.id }, () => deleteDashboardNote(note.id), 'Could not delete note')
+  }
+
+  // Cmd/Ctrl+Enter submits, Escape cancels an edit.
+  const keys = (submit: () => void, cancel?: () => void) => (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault()
+      submit()
+    } else if (e.key === 'Escape' && cancel) cancel()
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold text-zinc-400 uppercase tracking-wider">Quick Notes</h2>
-        <Button 
-          size="sm" 
-          variant="ghost" 
-          className="h-8 w-8 p-0 rounded-full"
-          onClick={() => setIsAdding(!isAdding)}
+    <Section title="Notes" action={notes.length > 0 && <span className="text-xs text-muted-foreground tabular-nums">{notes.length}</span>}>
+      <Panel className="overflow-hidden">
+        <form
+          onSubmit={e => {
+            e.preventDefault()
+            add()
+          }}
+          className="flex flex-col gap-2 p-3 sm:flex-row sm:items-end"
         >
-          {isAdding ? <X className="h-4 w-4" /> : <Plus className="h-5 w-5" />}
-        </Button>
-      </div>
+          <label htmlFor="new-note" className="sr-only">
+            New note
+          </label>
+          <Textarea
+            id="new-note"
+            rows={1}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={keys(add)}
+            placeholder="Jot something down — a pending payment, a reminder…"
+            className={`${INPUT} max-h-48 min-h-11`}
+          />
+          <Button type="submit" disabled={!draft.trim()} className="h-11 shrink-0 rounded-xl px-4">
+            <Plus />
+            Add note
+          </Button>
+        </form>
 
-      {isAdding && (
-        <Card className="border-none shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-zinc-900">
-          <CardContent className="p-4 space-y-3">
-            <Textarea
-              placeholder="Write a new note..."
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              className="min-h-[100px] bg-zinc-50/50 dark:bg-zinc-800/50 border-none focus-visible:ring-1 focus-visible:ring-zinc-200 resize-none rounded-xl p-3"
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <Button 
-                size="sm" 
-                variant="ghost" 
-                onClick={() => setIsAdding(false)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button 
-                size="sm" 
-                className="bg-[#1a365d] hover:bg-[#2a4a7d] rounded-lg px-4"
-                onClick={handleAddNote}
-                disabled={isSaving || !newNoteContent.trim()}
-              >
-                {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                Save Note
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="space-y-3">
-        {initialNotes.length === 0 && !isAdding && (
-          <p className="text-sm text-zinc-500 text-center py-8">No notes yet. Click + to add one.</p>
-        )}
-        
-        {initialNotes.map((note) => (
-          <Card key={note.id} className="border-none shadow-sm rounded-2xl overflow-hidden bg-white dark:bg-zinc-900 group">
-            <CardContent className="p-4">
-              {editingId === note.id ? (
-                <div className="space-y-3">
+        {notes.length === 0 ? (
+          <p className="border-t px-4 py-8 text-center text-sm text-muted-foreground">No notes yet. Anything you write here stays on your dashboard.</p>
+        ) : (
+          <ul className="divide-y border-t">
+            {notes.map(note =>
+              editing?.id === note.id ? (
+                <li key={note.id} className="space-y-2 p-3">
+                  <label htmlFor={`note-${note.id}`} className="sr-only">
+                    Edit note
+                  </label>
                   <Textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
-                    className="min-h-[100px] bg-zinc-50/50 dark:bg-zinc-800/50 border-none focus-visible:ring-1 focus-visible:ring-zinc-200 resize-none rounded-xl p-3"
+                    id={`note-${note.id}`}
+                    value={editing.content}
+                    onChange={e => setEditing({ id: note.id, content: e.target.value })}
+                    onKeyDown={keys(save, () => setEditing(null))}
+                    className={`${INPUT} max-h-72 min-h-20`}
                     autoFocus
                   />
                   <div className="flex justify-end gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      onClick={() => setEditingId(null)}
-                      disabled={isSaving}
-                    >
+                    <Button variant="ghost" className="h-10 rounded-xl px-4" onClick={() => setEditing(null)}>
                       Cancel
                     </Button>
-                    <Button 
-                      size="sm" 
-                      className="bg-[#1a365d] hover:bg-[#2a4a7d] rounded-lg px-4"
-                      onClick={() => handleUpdateNote(note.id)}
-                      disabled={isSaving || !editContent.trim()}
-                    >
-                      {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-                      Update
+                    <Button className="h-10 rounded-xl px-4" onClick={save} disabled={!editing.content.trim()}>
+                      Save
                     </Button>
                   </div>
-                </div>
+                </li>
               ) : (
-                <div className="flex justify-between gap-4">
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
-                      {note.content}
-                    </p>
-                    <p className="text-[10px] text-zinc-400">
-                      {new Date(note.updated_at).toLocaleDateString('en-IN', { 
-                        day: 'numeric', 
-                        month: 'short',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                <li key={note.id} className="flex gap-3 py-3 pr-2 pl-4 animate-in fade-in-0">
+                  <div className="min-w-0 flex-1 py-0.5">
+                    <p className="text-sm break-words whitespace-pre-wrap">{note.content}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {isTemp(note.id) ? (
+                        'Saving…'
+                      ) : (
+                        <time dateTime={note.updated_at}>{stamp(note.updated_at)}</time>
+                      )}
                     </p>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="h-8 w-8 p-0 text-zinc-300 hover:text-zinc-500"
-                      onClick={() => startEditing(note)}
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
-                      className="h-8 w-8 p-0 text-zinc-200 hover:text-red-400"
-                      onClick={() => handleDeleteNote(note.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-    </div>
+                  {!isTemp(note.id) && (
+                    <div className="flex shrink-0 items-start gap-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon-lg"
+                        className="rounded-xl text-muted-foreground"
+                        aria-label="Edit note"
+                        onClick={() => setEditing({ id: note.id, content: note.content })}
+                      >
+                        <Pencil />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-lg"
+                        className="rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        aria-label="Delete note"
+                        onClick={() => remove(note)}
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+      </Panel>
+    </Section>
   )
 }

@@ -1,363 +1,345 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
+import { EyeOff, Loader2, Plus, RotateCcw, Search, X } from 'lucide-react'
+import { createCategory, deactivateCategory, reactivateCategory } from '@/app/expenses/actions'
 import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogTrigger,
-  DialogFooter
-} from '@/components/ui/dialog'
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from '@/components/ui/select'
+import { confirmDialog } from '@/components/ui/confirm'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { createCategory, deactivateCategory, reactivateCategory } from '@/app/expenses/actions'
-import { useRouter } from 'next/navigation'
-import { Plus, Search, X } from 'lucide-react'
+import { Segmented } from '@/components/ui/segmented'
+import { toast } from '@/components/ui/toast'
+import { titleCase } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { CATEGORY_GROUPS, type ActionResult, type Category, type CategoryGroup } from '@/lib/types'
+import { cleanAmountInput } from './amount'
 
-interface Category {
-  id: string
-  name: string
-  is_default: boolean
-  is_active: boolean
-  category_group?: string
-  user_id?: string
-}
+type GroupFilter = 'All' | CategoryGroup
+const FILTERS: { value: GroupFilter; label: string }[] = [{ value: 'All', label: 'All' }, ...CATEGORY_GROUPS.map(g => ({ value: g, label: g }))]
+const GROUP_OPTIONS = CATEGORY_GROUPS.map(g => ({ value: g, label: g }))
 
-interface CategoryGridProps {
+export function CategoryGrid({
+  categories,
+  usedIds,
+  amounts,
+  onAmountChange,
+}: {
   categories: Category[]
+  usedIds: string[]
   amounts: Record<string, string>
-  onAmountChange: (categoryId: string, amount: string) => void
-  usedCategoryIds?: Set<string>
-}
-
-export function CategoryGrid({ 
-  categories, 
-  amounts, 
-  onAmountChange, 
-  usedCategoryIds = new Set() 
-}: CategoryGridProps) {
-  const [mounted, setMounted] = useState(false)
-  const [isAdding, setIsAdding] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState('')
-  const [selectedInactiveId, setSelectedInactiveId] = useState<string | null>(null)
-  const [isCreatingNew, setIsCreatingNew] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [deactivatingId, setDeactivatingId] = useState<string | null>(null)
-  
-  const [searchQuery, setSearchQuery] = useState('')
-  const [activeGroup, setActiveGroup] = useState<'All' | 'Fuel' | 'Labour' | 'Material' | 'Other'>('All')
-  
-  const router = useRouter()
-  const longPressTimer = useRef<NodeJS.Timeout | null>(null)
+  onAmountChange: (categoryId: string, value: string) => void
+}) {
+  const [query, setQuery] = useState('')
+  const [group, setGroup] = useState<GroupFilter>('All')
+  const [managing, setManaging] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [seed, setSeed] = useState('')
+  // The category last created/restored in the dialog; focus its tile as soon as it arrives in the refreshed props.
+  const addedId = useRef<string | null>(null)
+  const focusPending = useRef(false)
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
+    const el = focusPending.current && addedId.current && document.getElementById(`amount-${addedId.current}`)
+    if (!el) return
+    focusPending.current = false
+    el.focus({ preventScroll: true })
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  })
 
-  const groups = ['All', 'Fuel', 'Labour', 'Material', 'Other'] as const
+  const q = query.trim().toLowerCase()
+  const used = new Set(usedIds)
+  const visible = categories.filter(
+    c => c.is_active && (group === 'All' || (c.category_group ?? 'Other') === group) && (!q || c.name.toLowerCase().includes(q)),
+  )
+  const top = visible.filter(c => used.has(c.id))
+  const rest = visible.filter(c => !used.has(c.id))
+  const hidden = categories.filter(c => !c.is_active)
+  // Only the user's own categories can be hidden (RLS blocks updates to built-in ones).
+  const canManage = categories.some(c => c.is_active && !c.is_default)
+  // Hiding the last own category removes the toggle, so manage mode must switch off with it.
+  const manage = managing && canManage
 
-  const toTitleCase = (str: string) => {
-    return str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
+  function openNew() {
+    addedId.current = null
+    setSeed(titleCase(query))
+    setAdding(true)
   }
 
-  const filteredCategories = useMemo(() => {
-    return categories.filter(c => {
-      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesGroup = activeGroup === 'All' || c.category_group === activeGroup
-      return matchesSearch && matchesGroup && c.is_active
+  function added(id: string, name: string) {
+    addedId.current = id
+    focusPending.current = true
+    setQuery('')
+    setGroup('All')
+    setAdding(false)
+    toast.success(`“${name}” is ready`, 'Type the amount in its tile.')
+  }
+
+  async function hide(c: Category) {
+    const name = titleCase(c.name)
+    const ok = await confirmDialog({
+      title: `Hide “${name}”?`,
+      description: 'Old entries keep it. You can bring it back from New category.',
+      confirmLabel: 'Hide',
+      destructive: true,
     })
-  }, [categories, searchQuery, activeGroup])
-
-  const { used, unused } = useMemo(() => {
-    const usedList: Category[] = []
-    const unusedList: Category[] = []
-    
-    filteredCategories.forEach(c => {
-      if (usedCategoryIds.has(c.id) || (amounts[c.id] && parseFloat(amounts[c.id]) > 0)) {
-        usedList.push(c)
-      } else {
-        unusedList.push(c)
-      }
-    })
-    
-    return { used: usedList, unused: unusedList }
-  }, [filteredCategories, usedCategoryIds, amounts])
-
-  if (!mounted) return <div className="grid grid-cols-2 gap-3 h-32 animate-pulse bg-zinc-50 rounded-2xl" />
-
-  const handleAddCategory = async () => {
-    setLoading(true)
-    let result;
-    
-    if (isCreatingNew && newCategoryName) {
-      result = await createCategory(newCategoryName)
-    } else if (selectedInactiveId) {
-      result = await reactivateCategory(selectedInactiveId)
-    } else {
-      setLoading(false)
-      return
-    }
-
-    if (result.success) {
-      setIsAdding(false)
-      setNewCategoryName('')
-      setSelectedInactiveId(null)
-      setIsCreatingNew(false)
-      router.refresh()
-    } else {
-      alert(result.error || 'Failed to add category')
-    }
-    setLoading(false)
-  }
-
-  const handleLongPress = async (category: Category) => {
-    if (confirm(`Hide "${category.name}" category? It will remain in old trips but won't show here anymore.`)) {
-      setDeactivatingId(category.id)
-      const result = await deactivateCategory(category.id)
-      if (!result.success) {
-        alert(result.error || 'Failed to deactivate category')
-      } else {
-        router.refresh()
-      }
-      setDeactivatingId(null)
+    if (!ok) return
+    try {
+      const res = await deactivateCategory(c.id)
+      if (!res.success) return toast.error(res.error)
+      onAmountChange(c.id, '')
+      toast.success(`Hid “${name}”`)
+    } catch {
+      toast.error('Could not hide it. Check your internet and try again.')
     }
   }
 
-  const startPress = (category: Category) => {
-    longPressTimer.current = setTimeout(() => {
-      handleLongPress(category)
-    }, 800)
-  }
-
-  const endPress = () => {
-    if (longPressTimer.current) {
-      clearTimeout(longPressTimer.current)
-      longPressTimer.current = null
-    }
-  }
-
-  const renderGrid = (items: Category[], title?: string) => {
-    if (items.length === 0) return null
-    
-    return (
-      <div className="space-y-3">
-        {title && (
-          <h3 className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest px-1">
-            {title}
-          </h3>
-        )}
-        <div className="grid grid-cols-2 gap-3">
-          {items.map((category) => (
-            <div key={category.id} className="space-y-2">
-              <div
-                onMouseDown={() => startPress(category)}
-                onMouseUp={endPress}
-                onMouseLeave={endPress}
-                onTouchStart={() => startPress(category)}
-                onTouchEnd={endPress}
-                className={cn(
-                  "relative group h-28 p-4 rounded-3xl border transition-all duration-200 select-none flex flex-col justify-between cursor-pointer",
-                  amounts[category.id]
-                    ? "bg-[#1a365d] border-[#1a365d] shadow-lg shadow-blue-900/20 scale-[1.02]"
-                    : "bg-white dark:bg-zinc-900 border-zinc-100 dark:border-zinc-800 shadow-sm",
-                  deactivatingId === category.id && "opacity-50 scale-95"
-                )}
-              >
-                <label className={cn(
-                  "block text-[11px] font-black uppercase tracking-tight transition-colors pointer-events-none line-clamp-2",
-                  amounts[category.id] ? "text-white/70" : "text-zinc-400"
-                )}>
-                  {toTitleCase(category.name)}
-                </label>
-                
-                <div className="flex items-center gap-1">
-                  <span className={cn(
-                    "text-xl font-black transition-colors",
-                    amounts[category.id] ? "text-white/40" : "text-zinc-200"
-                  )}>
-                    ₹
-                  </span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="0"
-                    onClick={(e) => e.stopPropagation()}
-                    className={cn(
-                      "w-full bg-transparent border-none p-0 text-xl font-black focus:ring-0 placeholder:opacity-20 transition-colors",
-                      amounts[category.id] ? "text-white placeholder:text-white/30" : "text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400"
-                    )}
-                    value={amounts[category.id] || ''}
-                    onChange={(e) => onAmountChange(category.id, e.target.value)}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  const tiles = (list: Category[]) =>
+    list.map(c => (
+      <Tile
+        key={c.id}
+        category={c}
+        value={amounts[c.id] ?? ''}
+        onChange={v => onAmountChange(c.id, v)}
+        onHide={manage && !c.is_default ? () => hide(c) : undefined}
+      />
+    ))
 
   return (
-    <div className="space-y-6">
-      {/* Search and Filters */}
-      <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-          <Input 
-            placeholder="Search category..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-11 h-12 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl font-bold"
-          />
-          {searchQuery && (
-            <button 
-              onClick={() => setSearchQuery('')}
-              className="absolute right-4 top-1/2 -translate-y-1/2 p-1 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-full"
+    <div className="space-y-4">
+      <div className="space-y-2.5">
+        <div className="flex gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Search categories"
+              aria-label="Search categories"
+              enterKeyHint="search"
+              className="h-11 rounded-xl bg-card pr-10 pl-10"
+            />
+            {query && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                onClick={() => setQuery('')}
+                className="absolute top-1/2 right-1 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            )}
+          </div>
+          {canManage && (
+            <Button
+              variant={manage ? 'secondary' : 'outline'}
+              aria-pressed={manage}
+              onClick={() => setManaging(!manage)}
+              className="h-11 rounded-xl px-3.5"
             >
-              <X className="h-3 w-3 text-zinc-400" />
-            </button>
+              {manage ? 'Done' : 'Manage'}
+            </Button>
           )}
         </div>
-        
-        <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 px-1">
-          {groups.map(group => (
-            <button
-              key={group}
-              onClick={() => setActiveGroup(group)}
-              className={cn(
-                "px-5 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shrink-0",
-                activeGroup === group 
-                  ? "bg-[#1a365d] text-white shadow-md scale-105" 
-                  : "bg-zinc-100 dark:bg-zinc-900 text-zinc-400 hover:bg-zinc-200"
-              )}
-            >
-              {group}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="space-y-8">
-        {renderGrid(used, "Used this trip")}
-        {renderGrid(unused, searchQuery || activeGroup !== 'All' ? "Search Results" : "Add New")}
-        
-        {used.length === 0 && unused.length === 0 && (
-          <div className="text-center py-12 bg-zinc-50 dark:bg-zinc-900/50 rounded-[2rem] border-2 border-dashed border-zinc-100 dark:border-zinc-800">
-            <p className="text-sm font-bold text-zinc-400">No categories found</p>
-          </div>
+        <Segmented aria-label="Category group" value={group} onChange={setGroup} options={FILTERS} />
+        {manage && (
+          <p className="px-0.5 text-xs text-muted-foreground">
+            Tap <EyeOff className="inline size-3.5 align-[-2px]" /> to hide one of your own categories. Built-in ones can’t be hidden.
+          </p>
         )}
       </div>
 
-      {/* Add Category Dialog */}
-      <Dialog open={isAdding} onOpenChange={(open) => {
-        setIsAdding(open)
-        if (!open) {
-          setIsCreatingNew(false)
-          setSelectedInactiveId(null)
-          setNewCategoryName('')
-        }
-      }}>
-        <DialogTrigger 
-          render={
-            <Button 
-              variant="outline" 
-              className="w-full h-14 rounded-[1.5rem] border-dashed border-2 border-zinc-200 text-zinc-400 font-black uppercase tracking-widest gap-2 hover:bg-zinc-50 transition-all active:scale-[0.98]"
-            >
-              <Plus className="h-4 w-4" />
-              New Category
-            </Button>
-          }
-        />
-        <DialogContent className="rounded-[2rem] max-w-[90vw] sm:max-w-md p-8 border-none">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black tracking-tight">Add Category</DialogTitle>
-          </DialogHeader>
-          <div className="py-6 space-y-6">
-            {!isCreatingNew ? (
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <Label className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 px-1">Select Hidden Category</Label>
-                  <Select 
-                    value={selectedInactiveId || ''} 
-                    onValueChange={setSelectedInactiveId}
-                    disabled={categories.filter(c => !c.is_active).length === 0}
-                  >
-                    <SelectTrigger className="h-14 bg-zinc-50 border-none rounded-2xl font-bold px-5">
-                      <SelectValue placeholder="Choose existing..." />
-                    </SelectTrigger>
-                    <SelectContent className="rounded-2xl border-none shadow-2xl">
-                      {categories.filter(c => !c.is_active).map((c) => (
-                        <SelectItem key={c.id} value={c.id} className="rounded-xl py-3">
-                          {toTitleCase(c.name)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                
-                <div className="relative flex items-center gap-4">
-                  <div className="h-px flex-1 bg-zinc-100" />
-                  <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">OR</span>
-                  <div className="h-px flex-1 bg-zinc-100" />
-                </div>
+      {top.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="px-0.5 text-xs font-medium text-muted-foreground">Used on this trip</h3>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">{tiles(top)}</div>
+        </div>
+      )}
 
-                <Button 
-                  type="button"
-                  variant="outline"
-                  className="w-full h-14 rounded-2xl border-dashed border-zinc-200 text-zinc-500 font-bold gap-2"
-                  onClick={() => setIsCreatingNew(true)}
-                >
-                  <Plus className="h-4 w-4" />
-                  Create Brand New
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-3">
-                  <Label htmlFor="category-name" className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400 px-1">Category Name</Label>
-                  <Input 
-                    id="category-name" 
-                    placeholder="e.g. Repairs, Food, Loading"
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    className="h-14 bg-zinc-50 dark:bg-zinc-900 border-none rounded-2xl font-bold px-5"
-                    autoFocus
-                  />
-                </div>
-                <Button 
-                  type="button"
-                  variant="ghost"
-                  className="w-full text-xs text-zinc-400 font-bold hover:text-zinc-600"
-                  onClick={() => setIsCreatingNew(false)}
-                >
-                  Back to existing categories
-                </Button>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button 
-              type="button"
-              className="w-full h-16 text-lg font-black bg-[#1a365d] rounded-2xl shadow-xl transition-all active:scale-[0.98]"
-              onClick={handleAddCategory}
-              disabled={loading || (!selectedInactiveId && !newCategoryName)}
-            >
-              {loading ? 'Adding...' : isCreatingNew ? 'Save New Category' : 'Reactivate Category'}
-            </Button>
-          </DialogFooter>
+      <div className="space-y-2">
+        {top.length > 0 && rest.length > 0 && <h3 className="px-0.5 text-xs font-medium text-muted-foreground">More categories</h3>}
+        {visible.length === 0 && (
+          <p className="px-0.5 text-sm text-muted-foreground">
+            {q ? `No category matches “${query.trim()}”.` : 'No categories in this group yet.'}
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
+          {tiles(rest)}
+          <button
+            type="button"
+            onClick={openNew}
+            className="flex h-24 flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-3 text-center text-sm font-medium text-muted-foreground transition hover:border-primary/50 hover:bg-primary/[0.04] hover:text-primary active:scale-[0.98]"
+          >
+            <Plus className="size-5" />
+            <span className="line-clamp-2">{q && visible.length === 0 ? `Create “${titleCase(query)}”` : 'New category'}</span>
+          </button>
+        </div>
+      </div>
+
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent
+          className="gap-5 rounded-3xl p-6 sm:max-w-md"
+          finalFocus={() => (addedId.current && document.getElementById(`amount-${addedId.current}`)) || true}
+        >
+          <NewCategoryForm
+            initialName={seed}
+            initialGroup={group === 'All' ? 'Other' : group}
+            hidden={hidden}
+            onAdded={added}
+            onCancel={() => setAdding(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>
+  )
+}
+
+function Tile({
+  category,
+  value,
+  onChange,
+  onHide,
+}: {
+  category: Category
+  value: string
+  onChange: (v: string) => void
+  onHide?: () => void
+}) {
+  const name = titleCase(category.name)
+  const filled = Number(value) > 0
+  const id = `amount-${category.id}`
+  return (
+    <div className="relative">
+      {/* The whole tile is the label, so a tap anywhere focuses the amount. */}
+      <label
+        htmlFor={id}
+        className={cn(
+          'flex h-24 cursor-text flex-col justify-between rounded-2xl border bg-card p-3 shadow-sm transition-all focus-within:border-primary/60 focus-within:ring-3 focus-within:ring-primary/15',
+          filled && 'border-primary/50 bg-primary/[0.06] ring-1 ring-primary/40',
+        )}
+      >
+        <span className={cn('line-clamp-2 text-xs leading-snug font-medium', onHide && 'pr-8', filled ? 'text-primary' : 'text-muted-foreground')}>
+          {name}
+        </span>
+        <span className="flex items-baseline gap-0.5">
+          <span className={cn('text-base font-semibold', filled ? 'text-primary' : 'text-muted-foreground/50')}>₹</span>
+          <input
+            id={id}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            enterKeyHint="next"
+            placeholder="0"
+            aria-label={`${name} amount in rupees`}
+            value={value}
+            onChange={e => onChange(cleanAmountInput(e.target.value))}
+            className="w-full min-w-0 bg-transparent text-xl font-semibold tracking-tight tabular-nums outline-none placeholder:text-muted-foreground/35"
+          />
+        </span>
+      </label>
+      {onHide && (
+        <button
+          type="button"
+          onClick={onHide}
+          aria-label={`Hide ${name}`}
+          className="absolute top-1.5 right-1.5 flex size-9 items-center justify-center rounded-lg bg-background/80 text-muted-foreground ring-1 ring-border transition-colors hover:text-destructive"
+        >
+          <EyeOff className="size-4" />
+        </button>
+      )}
+    </div>
+  )
+}
+
+function NewCategoryForm({
+  initialName,
+  initialGroup,
+  hidden,
+  onAdded,
+  onCancel,
+}: {
+  initialName: string
+  initialGroup: CategoryGroup
+  hidden: Category[]
+  onAdded: (id: string, name: string) => void
+  onCancel: () => void
+}) {
+  const [name, setName] = useState(initialName)
+  const [group, setGroup] = useState<CategoryGroup>(initialGroup)
+  const [busy, startBusy] = useTransition()
+
+  function run(label: string, action: () => Promise<ActionResult<{ id: string }>>) {
+    startBusy(async () => {
+      try {
+        const res = await action()
+        if (res.success) onAdded(res.id, label)
+        else toast.error(res.error)
+      } catch {
+        toast.error('Could not save. Check your internet and try again.')
+      }
+    })
+  }
+
+  return (
+    <form
+      className="grid gap-5"
+      onSubmit={e => {
+        e.preventDefault()
+        if (name.trim()) run(titleCase(name), () => createCategory(name, group))
+      }}
+    >
+      <div className="space-y-1.5">
+        <DialogTitle className="text-base font-semibold">New category</DialogTitle>
+        <DialogDescription>Add a cost you see in your register, like “Tyre repair” or “Loading”.</DialogDescription>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="new-category-name" className="text-xs font-medium text-muted-foreground">Name</Label>
+        <Input
+          id="new-category-name"
+          autoFocus
+          value={name}
+          maxLength={60}
+          placeholder="e.g. Tyre repair"
+          onChange={e => setName(e.target.value)}
+          className="h-11 rounded-xl"
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <p className="text-xs font-medium text-muted-foreground">Group</p>
+        <Segmented aria-label="Group" value={group} onChange={setGroup} options={GROUP_OPTIONS} className="w-full [&>button]:flex-1 [&>button]:justify-center" />
+      </div>
+
+      {hidden.length > 0 && (
+        <div className="space-y-2 border-t pt-4">
+          <p className="text-xs font-medium text-muted-foreground">Or bring back a hidden one</p>
+          <div className="flex flex-wrap gap-2">
+            {hidden.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                disabled={busy}
+                onClick={() => run(titleCase(c.name), async () => ({ ...(await reactivateCategory(c.id)), id: c.id }))}
+                className="inline-flex h-9 items-center gap-1.5 rounded-xl border bg-card px-3 text-sm font-medium transition-colors hover:border-primary/50 hover:text-primary disabled:opacity-50"
+              >
+                <RotateCcw className="size-3.5" />
+                {titleCase(c.name)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button type="button" variant="outline" className="h-11 rounded-xl" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" className="h-11 rounded-xl" disabled={busy || !name.trim()}>
+          {busy ? <Loader2 className="animate-spin" /> : <Plus />}
+          Create
+        </Button>
+      </div>
+    </form>
   )
 }

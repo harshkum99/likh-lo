@@ -1,93 +1,133 @@
 'use client'
 
-import { useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { useRouter } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { useActionState, useState } from 'react'
+import { AlertCircle, Eye, EyeOff, Loader2, ScanLine, ShieldCheck, TrendingUp, Truck } from 'lucide-react'
+import { BrandMark } from '@/components/app/app-shell'
+import { Panel } from '@/components/app/page'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Truck } from 'lucide-react'
+import { signIn } from './actions'
+
+const VALUE_PROPS = [
+  { icon: ScanLine, title: 'Scan register pages with on-device AI', body: 'Snap a photo — every line is read and filled in for you.' },
+  { icon: Truck, title: 'Track every truck and trip', body: 'Diesel, toll, driver cash and more, logged against each trip.' },
+  { icon: TrendingUp, title: 'Know your profit instantly', body: 'See what each truck and trip earns, without a calculator.' },
+]
 
 export default function LoginPage() {
   const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const router = useRouter()
-  const supabase = createClient()
-
-  // This email is used in the background to provide a secure session
-  const FIXED_EMAIL = 'driver@likh-lo.com'
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
-    const { error } = await supabase.auth.signInWithPassword({ 
-      email: FIXED_EMAIL, 
-      password 
-    })
-
-    if (error) {
-      setError('Incorrect password. Please try again.')
-    } else {
-      router.push('/expenses')
-      router.refresh()
-    }
-    setLoading(false)
-  }
+  const [show, setShow] = useState(false)
+  // Sign-in runs on the server, so phones don't download the Supabase client just for this form.
+  const [state, formAction, loading] = useActionState(signIn, null)
+  const error = state?.error ?? null
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-white dark:bg-black p-6">
-      <div className="mb-8 flex flex-col items-center gap-2">
-        <div className="h-16 w-16 bg-[#1a365d] rounded-2xl flex items-center justify-center shadow-xl">
-          <Truck className="h-10 w-10 text-white" />
+    <div className="grid min-h-dvh lg:grid-cols-2">
+      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-hero-from to-hero-to p-12 text-white lg:flex lg:flex-col lg:justify-between">
+        <div aria-hidden className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-white/10 blur-3xl" />
+        <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 size-96 rounded-full bg-white/5 blur-3xl" />
+
+        <div className="relative flex items-center gap-3">
+          <div className="flex size-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20 backdrop-blur">
+            <Truck className="size-6" />
+          </div>
+          <span className="text-xl font-semibold tracking-tight">Likh-lo</span>
         </div>
-        <h1 className="text-2xl font-bold tracking-tight">Likh-lo</h1>
-      </div>
 
-      <Card className="w-full max-w-sm border-none shadow-none">
-        <CardHeader className="text-center px-0">
-          <CardTitle className="text-xl">Enter Password</CardTitle>
-          <CardDescription>Enter the driver access code to continue</CardDescription>
-        </CardHeader>
-        <CardContent className="px-0">
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-2">
-              <Input 
-                id="password" 
-                type="password" 
-                placeholder="••••••••"
-                className="h-14 text-center text-2xl tracking-[0.5em] rounded-xl bg-zinc-50 border-zinc-200"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoFocus
-                required 
-              />
+        <div className="relative max-w-md space-y-10">
+          <div className="space-y-3">
+            <h1 className="text-4xl leading-tight font-semibold tracking-tight">Your truck register, digitised</h1>
+            <p className="text-base text-white/70">Everything you write in the register — now searchable, totalled and safe.</p>
+          </div>
+          <ul className="space-y-5">
+            {VALUE_PROPS.map(({ icon: Icon, title, body }) => (
+              <li key={title} className="flex gap-4">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/15">
+                  <Icon className="size-5" />
+                </span>
+                <span>
+                  <span className="block font-medium">{title}</span>
+                  <span className="block text-sm text-white/65">{body}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <p className="relative text-xs text-white/50">Likh-lo · Fleet ledger for truck owners</p>
+      </aside>
+
+      <main className="flex items-center justify-center px-4 py-10 sm:px-6">
+        <div className="w-full max-w-sm space-y-6 animate-in fade-in-0">
+          <div className="flex flex-col items-center gap-3 text-center lg:hidden">
+            <BrandMark className="size-14 rounded-2xl [&_svg]:size-7" />
+            <div>
+              <p className="text-xl font-semibold tracking-tight">Likh-lo</p>
+              <p className="text-sm text-muted-foreground">Your truck register, digitised</p>
             </div>
-            
-            {error && (
-              <p className="text-sm font-medium text-red-500 text-center">
-                {error}
-              </p>
-            )}
+          </div>
 
-            <Button 
-              type="submit"
-              className="w-full h-14 text-lg font-bold bg-[#1a365d] hover:bg-[#1a365d]/90 text-white rounded-xl shadow-lg transition-all active:scale-[0.98]" 
-              disabled={loading}
-            >
-              {loading ? 'Verifying...' : 'Sign In'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-      
-      <p className="mt-8 text-xs text-zinc-400">
-        Secured by Supabase Auth
-      </p>
+          <Panel className="space-y-6 p-6 sm:p-8">
+            <div className="space-y-1.5">
+              <h2 className="text-xl font-semibold tracking-tight">Welcome back</h2>
+              <p className="text-sm text-muted-foreground">Enter your password to open your ledger.</p>
+            </div>
+
+            <form action={formAction} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="password" className="text-xs font-medium text-muted-foreground">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    name="password"
+                    type={show ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    placeholder="Enter password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    aria-invalid={!!error}
+                    aria-describedby={error ? 'password-error' : undefined}
+                    autoFocus
+                    required
+                    className="h-11 rounded-xl pr-12"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShow(s => !s)}
+                    aria-label={show ? 'Hide password' : 'Show password'}
+                    aria-pressed={show}
+                    className="absolute top-1/2 right-1 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    {show ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+                {error && (
+                  <p id="password-error" role="alert" className="flex items-center gap-1.5 text-sm text-destructive">
+                    <AlertCircle className="size-4 shrink-0" />
+                    {error}
+                  </p>
+                )}
+              </div>
+
+              <Button type="submit" className="h-11 w-full rounded-xl text-sm active:scale-[0.98]" disabled={loading || !password}>
+                {loading ? (
+                  <>
+                    <Loader2 className="animate-spin" /> Signing in…
+                  </>
+                ) : (
+                  'Sign in'
+                )}
+              </Button>
+            </form>
+          </Panel>
+
+          <p className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+            <ShieldCheck className="size-3.5" />
+            Secured by Supabase Auth
+          </p>
+        </div>
+      </main>
     </div>
   )
 }
-
