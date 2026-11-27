@@ -12,7 +12,6 @@ export const metadata: Metadata = {
   title: { default: 'Likh-lo · Fleet ledger', template: '%s · Likh-lo' },
   description: 'Scan your truck register, track every trip, and see your fleet’s profit at a glance.',
   manifest: '/manifest.json',
-  icons: { icon: [{ url: '/icon.svg', type: 'image/svg+xml' }], apple: '/icon.svg' },
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Likh-lo' },
 }
 

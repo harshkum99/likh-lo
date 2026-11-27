@@ -80,7 +80,7 @@ export function FleetView({ trips, expenses, today }: { trips: Trip[]; expenses:
       <Segmented value={periodKey} onChange={setPeriodKey} options={PERIODS} aria-label="Period" />
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <div className="flex flex-col gap-4 overflow-hidden rounded-2xl bg-gradient-to-br from-hero-from to-hero-to p-5 text-white shadow-sm">
+        <div className="flex flex-col gap-4 overflow-hidden rounded-2xl bg-hero p-5 text-white shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="text-xs font-medium text-white/70">

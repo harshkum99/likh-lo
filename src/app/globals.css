@@ -34,6 +34,10 @@
   --color-warning: var(--warning);
   --color-success: var(--success);
 
+  /* Brand gold (haldi/marigold from the bahi-khata logo): accents only — blue stays the primary colour. */
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+
   /* Hero (dark gradient) surfaces */
   --color-hero-from: var(--hero-from);
   --color-hero-to: var(--hero-to);
@@ -91,6 +95,9 @@
   --hero-from: oklch(0.29 0.09 268);
   --hero-to: oklch(0.43 0.18 278);
 
+  --gold: oklch(0.81 0.16 75);
+  --gold-foreground: oklch(0.3 0.11 22);
+
   --chart-1: #2a78d6;
   --chart-2: #eb6834;
   --chart-3: #1baf7a;
@@ -134,6 +141,9 @@
     --hero-from: oklch(0.27 0.08 268);
     --hero-to: oklch(0.38 0.15 278);
 
+    --gold: oklch(0.82 0.15 78);
+    --gold-foreground: oklch(0.26 0.09 22);
+
     --chart-1: #3987e5;
     --chart-2: #d95926;
     --chart-3: #199e70;
@@ -158,6 +168,9 @@
   body {
     @apply bg-background text-foreground;
   }
+  ::selection {
+    background: color-mix(in oklab, var(--gold) 45%, transparent);
+  }
 
   /* Hide number input spinners */
   input[type="number"]::-webkit-inner-spin-button,
@@ -176,6 +189,13 @@
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+/* Brand hero surface: the blue gradient with a warm haldi glow in the top-right corner. */
+@utility bg-hero {
+  background:
+    radial-gradient(110% 80% at 100% 0%, color-mix(in oklab, var(--gold) 30%, transparent) 0%, transparent 60%),
+    linear-gradient(to bottom right, var(--hero-from), var(--hero-to));
 }
 
 /* Bottom padding that clears the mobile tab bar + iOS home indicator. */

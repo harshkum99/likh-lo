@@ -34,7 +34,7 @@ export function TripHero({ summary: s }: { summary: TripSummary }) {
   }
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-hero-from to-hero-to p-5 text-white shadow-lg shadow-primary/20 sm:p-6">
+    <div className="relative overflow-hidden rounded-3xl bg-hero p-5 text-white shadow-lg shadow-primary/20 sm:p-6">
       <div aria-hidden className="pointer-events-none absolute -top-16 -right-16 size-48 rounded-full bg-white/10 blur-2xl" />
       <p className="relative flex items-center gap-2 text-sm font-medium text-white/80">
         {running ? (

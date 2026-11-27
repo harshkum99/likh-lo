@@ -20,6 +20,7 @@ import {
   Truck,
 } from 'lucide-react'
 import { Page, Panel, Section } from '@/components/app/page'
+import { BrandMark } from '@/components/app/app-shell'
 import { KpiCard } from '@/components/app/kpi-card'
 import { Button } from '@/components/ui/button'
 import { LiveDot } from '@/components/ui/badge'
@@ -51,6 +52,14 @@ const PERIOD_LABEL: Record<PeriodKey, string> = {
 }
 
 /** The business cockpit. All numbers come from computeDashboard so they match /fleet and /trips. */
+// Phones have no sidebar, so the dashboard header carries the logo there.
+const TITLE = (
+  <span className="flex items-center gap-2.5">
+    <BrandMark className="size-8 rounded-lg lg:hidden" />
+    Overview
+  </span>
+)
+
 export function DashboardView({
   trips,
   expenses,
@@ -74,7 +83,7 @@ export function DashboardView({
 
   if (!trips.length) {
     return (
-      <Page title="Overview" subtitle={subtitle}>
+      <Page title={TITLE} subtitle={subtitle}>
         <FirstRun />
         <NotesArea initialNotes={notes} />
       </Page>
@@ -86,7 +95,7 @@ export function DashboardView({
 
   return (
     <Page
-      title="Overview"
+      title={TITLE}
       subtitle={subtitle}
       actions={
         <>
@@ -194,7 +203,7 @@ function Hero({ d, vehicle }: { d: DashboardData; vehicle: string | null }) {
   const hasMoney = totals.revenue + totals.expense > 0
 
   return (
-    <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-hero-from to-hero-to p-5 text-white shadow-lg shadow-primary/15 sm:p-6 lg:grid lg:grid-cols-2 lg:items-end lg:gap-10">
+    <div className="relative overflow-hidden rounded-3xl bg-hero p-5 text-white shadow-lg shadow-primary/15 sm:p-6 lg:grid lg:grid-cols-2 lg:items-end lg:gap-10">
       <div aria-hidden className="pointer-events-none absolute -top-24 -right-16 size-64 rounded-full bg-white/10 blur-3xl" />
       <div className="relative">
         <p className="text-sm text-white/70">
@@ -338,7 +347,7 @@ const STEPS = [
 function FirstRun() {
   return (
     <>
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-hero-from to-hero-to p-6 text-white shadow-lg shadow-primary/15 sm:p-8">
+      <div className="relative overflow-hidden rounded-3xl bg-hero p-6 text-white shadow-lg shadow-primary/15 sm:p-8">
         <div aria-hidden className="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-white/10 blur-3xl" />
         <Truck aria-hidden className="pointer-events-none absolute -right-6 -bottom-8 size-44 text-white/[0.07]" />
         <div className="relative">

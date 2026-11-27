@@ -24,14 +24,12 @@ export default function LoginPage() {
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-2">
-      <aside className="relative hidden overflow-hidden bg-gradient-to-br from-hero-from to-hero-to p-12 text-white lg:flex lg:flex-col lg:justify-between">
+      <aside className="relative hidden overflow-hidden bg-hero p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div aria-hidden className="pointer-events-none absolute -top-32 -right-32 size-96 rounded-full bg-white/10 blur-3xl" />
         <div aria-hidden className="pointer-events-none absolute -bottom-40 -left-24 size-96 rounded-full bg-white/5 blur-3xl" />
 
         <div className="relative flex items-center gap-3">
-          <div className="flex size-11 items-center justify-center rounded-2xl bg-white/15 ring-1 ring-white/20 backdrop-blur">
-            <Truck className="size-6" />
-          </div>
+          <BrandMark className="size-11" />
           <span className="text-xl font-semibold tracking-tight">Likh-lo</span>
         </div>
 
@@ -61,7 +59,7 @@ export default function LoginPage() {
       <main className="flex items-center justify-center px-4 py-10 sm:px-6">
         <div className="w-full max-w-sm space-y-6 animate-in fade-in-0">
           <div className="flex flex-col items-center gap-3 text-center lg:hidden">
-            <BrandMark className="size-14 rounded-2xl [&_svg]:size-7" />
+            <BrandMark className="size-14 rounded-2xl" />
             <div>
               <p className="text-xl font-semibold tracking-tight">Likh-lo</p>
               <p className="text-sm text-muted-foreground">Your truck register, digitised</p>
@@ -83,6 +81,9 @@ export default function LoginPage() {
                     name="password"
                     type={show ? 'text' : 'password'}
                     autoComplete="current-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
                     placeholder="Enter password"
                     value={password}
                     onChange={e => setPassword(e.target.value)}

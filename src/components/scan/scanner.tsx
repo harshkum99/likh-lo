@@ -191,7 +191,7 @@ function Capture({ onPick, autoFocus }: { onPick: (file: File | undefined) => vo
       }}
       className={cn('flex flex-col items-center gap-5 px-5 py-8 text-center transition-colors sm:py-10', dragging && 'border-primary bg-primary/5')}
     >
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-hero-from to-hero-to text-white shadow-lg shadow-primary/25">
+      <div className="flex size-16 items-center justify-center rounded-2xl bg-hero text-white shadow-lg shadow-primary/25">
         <ScanText className="size-8" />
       </div>
       <div className="space-y-1">

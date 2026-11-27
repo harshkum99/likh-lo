@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFBB2E"/>
+      <stop offset="1" stop-color="#F28A05"/>
+    </linearGradient>
+    <linearGradient id="cover" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#C41A2E"/>
+      <stop offset="1" stop-color="#8A0B1A"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE38A"/>
+      <stop offset="1" stop-color="#FFC233"/>
+    </linearGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+
+  <!-- marigold tile -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <g transform="translate(252 255) scale(1.15) translate(-252 -255)">
+  <!-- soft shadow under the ledger -->
+  <rect x="132" y="86" width="258" height="370" rx="26" fill="#9A4A00" opacity="0.35" filter="url(#sh)"/>
+
+  <!-- page block peeking out right/bottom -->
+  <rect x="134" y="80" width="250" height="364" rx="22" fill="#FFF3D9"/>
+  <path d="M377 112V420M364 437H160" stroke="#E2BE7E" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- red cloth cover -->
+  <rect x="120" y="66" width="250" height="364" rx="24" fill="url(#cover)"/>
+  <!-- top binding fold with stitches -->
+  <path d="M120 90a24 24 0 0 1 24-24h202a24 24 0 0 1 24 24v24H120z" fill="#7E0816"/>
+
+
+  <!-- deboss shadow of the truck -->
+  <g transform="translate(157 164)" fill="#6E0612" opacity="0.55">
+    <use href="#truckShape"/>
+  </g>
+  <g transform="translate(157 158)">
+    <g id="truckShape" fill="url(#gold)">
+      <rect x="0" y="14" width="104" height="70" rx="6"/>
+      <path d="M90 0h40l16 30h-56z"/>
+      <path d="M106 32h38v56h-38z"/>
+      <path d="M142 56h22a10 10 0 0 1 10 10v22h-32z"/>
+      <rect x="0" y="80" width="176" height="14" rx="4"/>
+      <circle cx="34" cy="98" r="18"/>
+      <circle cx="146" cy="98" r="18"/>
+    </g>
+    <!-- planks, windscreen, wheel gaps cut back into the cloth red -->
+    <rect x="113" y="38" width="24" height="20" rx="3" fill="#B3142A"/>
+    <g fill="none" stroke="#B3142A" stroke-width="7">
+      <circle cx="34" cy="98" r="21.5"/>
+      <circle cx="146" cy="98" r="21.5"/>
+    </g>
+    <circle cx="34" cy="98" r="6" fill="#B3142A"/>
+    <circle cx="146" cy="98" r="6" fill="#B3142A"/>
+  </g>
+
+  <!-- dori: cord wrapped round the ledger (offset so it lands on a full pixel row at 16px) -->
+  <g transform="translate(0 7)">
+  <rect x="112" y="318" width="280" height="26" rx="7" fill="#5E0410" opacity="0.35"/>
+  <rect x="112" y="311" width="280" height="26" rx="8" fill="url(#gold)"/>
+  </g>
+  </g>
+</svg>

@@ -18,9 +18,8 @@ const isActive = (pathname: string, href: string) => pathname === href || pathna
 
 export function BrandMark({ className }: { className?: string }) {
   return (
-    <div className={cn('flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-hero-from to-hero-to text-white shadow-md shadow-primary/20', className)}>
-      <Truck className="size-5" />
-    </div>
+    // eslint-disable-next-line @next/next/no-img-element -- tiny static SVG (src/app/icon.svg), nothing to optimise
+    <img src="/icon.svg" alt="" width={36} height={36} className={cn('size-9 rounded-xl shadow-md shadow-black/10', className)} />
   )
 }
 
@@ -42,7 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <Link
           href="/scan"
-          className="mt-6 flex h-11 items-center justify-center gap-2 rounded-xl bg-primary text-sm font-medium text-primary-foreground shadow-md shadow-primary/25 transition hover:bg-primary/90 active:scale-[0.98]"
+          className="mt-6 flex h-11 items-center justify-center gap-2 rounded-xl bg-gold text-sm font-semibold text-gold-foreground shadow-md shadow-gold/30 transition hover:bg-gold/90 active:scale-[0.98]"
         >
           <ScanLine className="size-4" />
           Scan register page
@@ -58,8 +57,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
-                  active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  'relative flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-colors',
+                  active
+                    ? 'bg-primary/10 text-primary before:absolute before:inset-y-2 before:left-0 before:w-1 before:rounded-full before:bg-gold'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                 )}
               >
                 <Icon className="size-[18px]" />
@@ -93,8 +94,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Link key={item.href} href={item.href} aria-label="Scan register page" className="flex justify-center">
                   <span
                     className={cn(
-                      '-mt-7 flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-hero-to text-white shadow-lg shadow-primary/30 ring-4 ring-background transition active:scale-95',
-                      active && 'ring-primary/20',
+                      '-mt-7 flex size-14 items-center justify-center rounded-2xl bg-gold text-gold-foreground shadow-lg shadow-gold/40 ring-4 ring-background transition active:scale-95',
+                      active && 'ring-gold/30',
                     )}
                   >
                     <Icon className="size-6" />
@@ -108,8 +109,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
-                  active ? 'text-primary' : 'text-muted-foreground',
+                  'relative flex h-full flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
+                  active ? 'text-primary after:absolute after:top-0 after:h-0.5 after:w-8 after:rounded-full after:bg-gold' : 'text-muted-foreground',
                 )}
               >
                 <Icon className={cn('size-5', active && 'stroke-[2.25]')} />
